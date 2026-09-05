@@ -23,13 +23,14 @@ install -d -m 0755 "$RELEASE_PATH"
 tar -xzf /tmp/background-board-release.tar.gz -C "$RELEASE_PATH"
 rm -f /tmp/background-board-release.tar.gz
 cd "$RELEASE_PATH"
-corepack pnpm install --prod --frozen-lockfile
+corepack pnpm install --prod --frozen-lockfile --ignore-scripts
 chown -R background-board:background-board "$RELEASE_PATH"
 ln -sfn "$RELEASE_PATH" /srv/background-board/current.next
 if [ -L /srv/background-board/current ]; then
     readlink -f /srv/background-board/current > /srv/background-board/previous-release
 fi
 mv -Tf /srv/background-board/current.next /srv/background-board/current
+systemctl enable background-board.service
 systemctl restart background-board.service
 REMOTE
 
