@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { NextAction } from '$lib/domain/types';
-	let { action }: { action: NextAction } = $props();
+	let { action, changed = false }: { action: NextAction; changed?: boolean } = $props();
 	let copied = $state(false);
 	async function copyMessage() {
 		await navigator.clipboard.writeText(action.message);
@@ -9,7 +9,7 @@
 	}
 </script>
 
-<section class="next-action">
+<section class:changed class="next-action">
 	<span class="kicker">现在可以这样问</span>
 	<h3>{action.question}</h3>
 	<p>{action.why}</p>

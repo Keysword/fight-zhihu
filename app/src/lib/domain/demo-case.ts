@@ -37,7 +37,7 @@ export const dormDemoBoard: BackgroundBoard = {
 	caseId: 'demo-dorm',
 	title: '新人入住宿舍',
 	goal: '确认 8 月 2 日到达后是否可以实际入住',
-	stage: 'actionable',
+	stage: 'waiting',
 	currentBlocker: '房间是否分配、钥匙由谁交付仍未得到负责方确认',
 	claims: [
 		{

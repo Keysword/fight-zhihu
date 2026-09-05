@@ -651,6 +651,28 @@ h1,
 	border: 1px solid var(--rule);
 	resize: vertical;
 }
+.update-note {
+	margin: 16px 0 0;
+	padding: 12px 14px;
+	color: var(--blue);
+	background: var(--blue-soft);
+	font-size: 13px;
+	font-weight: 700;
+}
+.changed {
+	animation: board-change 5s ease-out;
+}
+@keyframes board-change {
+	0%,
+	32% {
+		box-shadow:
+			0 0 0 4px #eea92c,
+			0 0 0 9px rgba(238, 169, 44, 0.22);
+	}
+	100% {
+		box-shadow: 0 0 0 0 transparent;
+	}
+}
 .empty-board {
 	margin: 28px 0;
 	padding: 40px;
