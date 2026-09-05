@@ -4,8 +4,10 @@ import { dormDemoEvidence } from '$lib/domain/demo-case';
 import { appendEvidenceInputSchema, createCaseInputSchema } from '$lib/domain/schemas';
 import type { AgentEvent, CaseRecord } from '$lib/domain/types';
 import { redactText, type RedactionReplacement } from '$lib/privacy/redact';
-import { CaseNotFoundError, type CaseRepository } from '$lib/server/cases/repository';
+import { buildDormDemoFallback } from '$lib/server/agent/fallback';
 import type { AgentRunResult } from '$lib/server/agent/runtime';
+import { validateBoardForCase } from '$lib/server/agent/tools';
+import { CaseNotFoundError, type CaseRepository } from '$lib/server/cases/repository';
 
 const replacementSchema = z.object({ from: z.string().min(1), to: z.string() }).strict();
 const serviceCreateSchema = createCaseInputSchema.extend({
@@ -89,7 +91,25 @@ export function createCaseService(dependencies: {
 				type: 'case.demo',
 				payload: { fixture: 'dorm', summary: '载入已匿名化的新人宿舍案例' }
 			});
-			const run = await runner.run(caseRecord.id);
+			let run = await runner.run(caseRecord.id);
+			const analyzed = requireCase(caseRecord.id);
+			if (!analyzed.board) {
+				const fallback = buildDormDemoFallback(analyzed);
+				if (!fallback) throw new Error('内置演示案例数据不完整');
+				validateBoardForCase(fallback, analyzed, fallback.externalClues);
+				const saved = repository.saveBoard(analyzed.id, analyzed.revision, fallback);
+				const summary = '通用 Agent 本轮选择继续追问，演示案例改用已审核的完整分析结果';
+				repository.appendEvent(analyzed.id, {
+					type: 'agent.fallback',
+					payload: { summary }
+				});
+				run = {
+					outcome: 'fallback',
+					summary,
+					turns: run.turns,
+					revision: saved.revision
+				};
+			}
 			return { ...view(caseRecord.id), run };
 		},
 

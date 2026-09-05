@@ -57,7 +57,9 @@ describe('case service', () => {
 		const { repository, runner, service } = setup();
 		const result = await service.createDemo();
 		expect(result.case.evidence).toHaveLength(4);
+		expect(result.case.board?.keyCompleter?.participantId).toBe('participant-hr');
 		expect(result.events.some((event) => event.type === 'case.demo')).toBe(true);
+		expect(result.events.some((event) => event.type === 'agent.fallback')).toBe(true);
 		expect(runner.run).toHaveBeenCalledWith(result.case.id);
 		repository.close();
 	});
