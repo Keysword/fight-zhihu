@@ -6,3 +6,8 @@ test('introduces the product and its two starting paths', async ({ page }) => {
 	await expect(page.getByRole('button', { name: '体验宿舍案例' })).toBeVisible();
 	await expect(page.getByRole('link', { name: '新建一件卡住的事' })).toBeVisible();
 });
+
+test('does not expose a public case index', async ({ request }) => {
+	const response = await request.get('/background-board/api/cases');
+	expect(response.status()).toBe(405);
+});

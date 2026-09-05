@@ -7,6 +7,7 @@ import { AgentSafetyError } from '$lib/server/agent/tools';
 import { ModelClientError, ModelConfigurationError } from '$lib/server/agent/model-client';
 import { CaseNotFoundError, RevisionConflictError } from '$lib/server/cases/repository';
 import { ZhihuApiError, ZhihuRateLimitError } from '$lib/server/zhihu/client';
+import { RateLimitExceededError } from '$lib/server/rate-limit';
 
 const MAX_BODY_BYTES = 100_000;
 
@@ -50,6 +51,10 @@ export function apiError(error: unknown): Response {
 	} else if (error instanceof ZhihuRateLimitError) {
 		status = 429;
 		code = 'ZHIHU_RATE_LIMIT';
+		message = error.message;
+	} else if (error instanceof RateLimitExceededError) {
+		status = 429;
+		code = 'RATE_LIMITED';
 		message = error.message;
 	} else if (error instanceof ModelConfigurationError) {
 		status = 503;
