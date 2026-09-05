@@ -145,6 +145,27 @@ describe('stateful agent runtime', () => {
 		repo.close();
 	});
 
+	it('gives the model one protocol repair turn without persisting private prose', async () => {
+		const repo = repository();
+		const created = repo.createCase({ title: '事项', goal: '解决', confusion: '不清楚' });
+		const model = scriptedModel([
+			'我先分析一下这个问题。',
+			'{"type":"finish","summary":"目前需要用户补充证据"}'
+		]);
+		const zhihu = { searchZhihu: vi.fn(async () => []), searchGlobal: vi.fn(async () => []) };
+
+		await expect(
+			createAgentRuntime({ repository: repo, model, zhihu }).run(created.id)
+		).resolves.toMatchObject({
+			outcome: 'finished',
+			turns: 2
+		});
+		const events = repo.listEvents(created.id);
+		expect(events.some((event) => event.type === 'agent.protocol_repair')).toBe(true);
+		expect(JSON.stringify(events)).not.toContain('我先分析一下');
+		repo.close();
+	});
+
 	it('rejects board facts that cite evidence outside the case', async () => {
 		const repo = repository();
 		const created = repo.createCase({ title: '事项', goal: '解决', confusion: '不清楚' });

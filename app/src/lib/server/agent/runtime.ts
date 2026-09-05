@@ -83,6 +83,7 @@ export function createAgentRuntime(dependencies: RuntimeDependencies) {
 			const messages = buildAgentMessages(caseRecord, repository.listEvents(caseId));
 			const gatheredClues: ExternalClue[] = [];
 			let searchCount = 0;
+			let protocolRepairUsed = false;
 
 			for (let turn = 1; turn <= MAX_TURNS; turn += 1) {
 				let rawAction: string;
@@ -92,7 +93,30 @@ export function createAgentRuntime(dependencies: RuntimeDependencies) {
 					if (turn === 1) return useDemoFallback(caseId, error);
 					throw error;
 				}
-				const action = parseAgentAction(rawAction);
+				let action: AgentAction;
+				try {
+					action = parseAgentAction(rawAction);
+				} catch (error) {
+					if (!protocolRepairUsed) {
+						protocolRepairUsed = true;
+						repository.appendEvent(caseId, {
+							type: 'agent.protocol_repair',
+							payload: { summary: '模型输出格式不合规，已要求其重新提交动作 JSON' }
+						});
+						messages.push({ role: 'assistant', content: rawAction });
+						messages.push({
+							role: 'user',
+							content:
+								'你刚才的输出没有通过动作协议。不要解释、不要复述分析，只重新输出一个合法的动作 JSON：search_zhihu、search_global、propose_board_patch、ask_user 或 finish。'
+						});
+						continue;
+					}
+					repository.appendEvent(caseId, {
+						type: 'agent.error',
+						payload: { category: 'protocol', summary: '模型连续两次没有返回合法动作 JSON' }
+					});
+					throw error;
+				}
 				repository.appendEvent(caseId, {
 					type: 'agent.action',
 					payload: actionEventPayload(action)
