@@ -35,4 +35,5 @@ systemctl restart background-board.service
 REMOTE
 
 ssh "$DEPLOY_TARGET" "curl --fail --silent --show-error --retry 8 --retry-delay 1 http://127.0.0.1:3210/background-board/api/health >/dev/null"
+ssh "$DEPLOY_TARGET" "nginx -t && systemctl reload nginx"
 echo "Deployed release $RELEASE_ID"
