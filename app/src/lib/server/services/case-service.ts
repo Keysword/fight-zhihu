@@ -91,14 +91,25 @@ export function createCaseService(dependencies: {
 				type: 'case.demo',
 				payload: { fixture: 'dorm', summary: '载入已匿名化的新人宿舍案例' }
 			});
-			let run = await runner.run(caseRecord.id);
+			let run: AgentRunResult | null = null;
+			let agentFailed = false;
+			try {
+				run = await runner.run(caseRecord.id);
+			} catch {
+				agentFailed = true;
+			}
 			const analyzed = requireCase(caseRecord.id);
-			if (!analyzed.board) {
+			if (!analyzed.board || agentFailed) {
 				const fallback = buildDormDemoFallback(analyzed);
 				if (!fallback) throw new Error('内置演示案例数据不完整');
-				validateBoardForCase(fallback, analyzed, fallback.externalClues);
-				const saved = repository.saveBoard(analyzed.id, analyzed.revision, fallback);
-				const summary = '通用 Agent 本轮选择继续追问，演示案例改用已审核的完整分析结果';
+				let revision = analyzed.revision;
+				if (!analyzed.board) {
+					validateBoardForCase(fallback, analyzed, fallback.externalClues);
+					revision = repository.saveBoard(analyzed.id, analyzed.revision, fallback).revision;
+				}
+				const summary = agentFailed
+					? '通用 Agent 本轮未完成，演示案例改用已审核的完整分析结果'
+					: '通用 Agent 本轮选择继续追问，演示案例改用已审核的完整分析结果';
 				repository.appendEvent(analyzed.id, {
 					type: 'agent.fallback',
 					payload: { summary }
@@ -106,10 +117,11 @@ export function createCaseService(dependencies: {
 				run = {
 					outcome: 'fallback',
 					summary,
-					turns: run.turns,
-					revision: saved.revision
+					turns: run?.turns ?? 0,
+					revision
 				};
 			}
+			if (!run) throw new Error('演示案例未形成可展示结果');
 			return { ...view(caseRecord.id), run };
 		},
 

@@ -64,6 +64,23 @@ describe('case service', () => {
 		repository.close();
 	});
 
+	it('still returns the reviewed demo board when the general agent fails', async () => {
+		const directory = mkdtempSync(join(tmpdir(), 'background-service-'));
+		directories.push(directory);
+		const repository = createCaseRepository(join(directory, 'failed-demo.sqlite'));
+		const service = createCaseService({
+			repository,
+			runner: { run: vi.fn(async () => Promise.reject(new Error('model failed'))) },
+			configuration: { modelConfigured: true, zhihuConfigured: true, version: 'test' }
+		});
+
+		await expect(service.createDemo()).resolves.toMatchObject({
+			case: { revision: 1, board: { keyCompleter: { participantId: 'participant-hr' } } },
+			run: { outcome: 'fallback' }
+		});
+		repository.close();
+	});
+
 	it('appends evidence, runs the same case, and hides internal configuration', async () => {
 		const { repository, runner, service } = setup();
 		const created = service.createCase({
