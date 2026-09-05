@@ -8,7 +8,7 @@ describe('redactText', () => {
 	});
 
 	it('redacts mainland identity numbers', () => {
-		expect(redactText('身份证 110101199001011234').redacted).toBe('身份证 [证件号码]');
+		expect(redactText('身份证 320311199912312345').redacted).toBe('身份证 [证件号码]');
 	});
 
 	it('redacts email addresses', () => {

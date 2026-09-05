@@ -5,9 +5,17 @@ import { dormDemoBoard, dormDemoEvidence } from './demo-case';
 describe('dorm demo', () => {
 	it('is anonymous and separates the five easily confused states', () => {
 		const board = backgroundBoardSchema.parse(dormDemoBoard);
-		const text = JSON.stringify({ board, evidence: dormDemoEvidence });
-
-		expect(text).not.toMatch(/雷媛越|赵佳琪|张名芸|明昒/);
+		expect(dormDemoEvidence.map((evidence) => evidence.sourceLabel)).toEqual([
+			'部门对接人',
+			'接引同事',
+			'人力老师',
+			'我的补充'
+		]);
+		expect(board.participants.map((participant) => participant.name)).toEqual([
+			'部门对接人',
+			'接引同事',
+			'人力 / 住宿管理方'
+		]);
 		expect(board.claims.map((claim) => claim.text).join('\n')).toMatch(/住宿资格/);
 		expect(board.claims.map((claim) => claim.text).join('\n')).toMatch(/房间/);
 		expect(board.claims.map((claim) => claim.text).join('\n')).toMatch(/进入园区/);
