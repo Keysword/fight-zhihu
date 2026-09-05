@@ -97,11 +97,15 @@ export function createAgentRuntime(dependencies: RuntimeDependencies) {
 				try {
 					action = parseAgentAction(rawAction);
 				} catch (error) {
+					const protocolReason = error instanceof Error ? error.message : '未知协议错误';
 					if (!protocolRepairUsed) {
 						protocolRepairUsed = true;
 						repository.appendEvent(caseId, {
 							type: 'agent.protocol_repair',
-							payload: { summary: '模型输出格式不合规，已要求其重新提交动作 JSON' }
+							payload: {
+								summary: '模型输出格式不合规，已要求其重新提交动作 JSON',
+								reason: protocolReason
+							}
 						});
 						messages.push({ role: 'assistant', content: rawAction });
 						messages.push({
@@ -113,7 +117,11 @@ export function createAgentRuntime(dependencies: RuntimeDependencies) {
 					}
 					repository.appendEvent(caseId, {
 						type: 'agent.error',
-						payload: { category: 'protocol', summary: '模型连续两次没有返回合法动作 JSON' }
+						payload: {
+							category: 'protocol',
+							summary: '模型连续两次没有返回合法动作 JSON',
+							reason: protocolReason
+						}
 					});
 					throw error;
 				}
