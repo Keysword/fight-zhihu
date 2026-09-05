@@ -1,0 +1,26 @@
+# Isolated development worktrees
+.worktrees/
+
+# Private source material and generated research data
+案例图片/
+调研数据/
+五件事-原文与点评.md
+背景板-知乎调研报告.md
+
+# Application dependencies and build output
+app/node_modules/
+app/.svelte-kit/
+app/build/
+app/test-results/
+app/playwright-report/
+app/coverage/
+
+# Runtime state and credentials
+app/.data/
+.env
+.env.*
+!.env.example
+
+# Editor and OS files
+.DS_Store
+*.swp
