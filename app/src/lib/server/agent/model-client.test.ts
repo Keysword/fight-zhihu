@@ -3,6 +3,23 @@ import { describe, expect, it, vi } from 'vitest';
 import { createModelClient, ModelClientError, resolveModelConfiguration } from './model-client';
 
 describe('model client', () => {
+	it('prefers an existing OpenCode general-agent server over the Zhihu answer model', () => {
+		expect(
+			resolveModelConfiguration({
+				OPENCODE_SERVER_URL: 'http://127.0.0.1:4096',
+				OPENCODE_SERVER_PASSWORD: 'server-password',
+				ZHIHU_ACCESS_SECRET: 'zhihu-secret'
+			})
+		).toEqual({
+			url: 'http://127.0.0.1:4096',
+			apiKey: 'server-password',
+			model: 'server-default',
+			isZhihu: false,
+			protocol: 'opencode',
+			username: 'opencode'
+		});
+	});
+
 	it('falls back to Zhihu Direct Answer when only its access secret is configured', () => {
 		expect(resolveModelConfiguration({ ZHIHU_ACCESS_SECRET: 'zhihu-secret' })).toEqual({
 			url: 'https://developer.zhihu.com/v1/chat/completions',
@@ -62,5 +79,55 @@ describe('model client', () => {
 		expect(fetchImpl.mock.calls[0][1]?.headers).toMatchObject({
 			'X-Request-Timestamp': '1800000123'
 		});
+	});
+
+	it('runs a constrained turn through an OpenCode server and removes the temporary session', async () => {
+		const fetchImpl = vi.fn<typeof fetch>((input, init) => {
+			const url = String(input);
+			if (url.endsWith('/session') && init?.method === 'POST') {
+				return Promise.resolve(new Response(JSON.stringify({ id: 'session-1' }), { status: 200 }));
+			}
+			if (url.endsWith('/session/session-1/message')) {
+				return Promise.resolve(
+					new Response(
+						JSON.stringify({
+							parts: [
+								{ type: 'reasoning', text: 'private' },
+								{ type: 'text', text: '{"type":"finish","summary":"ok"}' }
+							]
+						}),
+						{ status: 200 }
+					)
+				);
+			}
+			return Promise.resolve(new Response('true', { status: 200 }));
+		});
+		const client = createModelClient(
+			{
+				url: 'http://127.0.0.1:4096',
+				apiKey: 'password',
+				model: 'server-default',
+				isZhihu: false,
+				protocol: 'opencode',
+				username: 'opencode'
+			},
+			{ fetchImpl }
+		);
+
+		await expect(
+			client.complete([
+				{ role: 'system', content: 'rules' },
+				{ role: 'user', content: 'case' }
+			])
+		).resolves.toContain('finish');
+		const messageCall = fetchImpl.mock.calls.find(([url]) => String(url).endsWith('/message'));
+		const requestBody = JSON.parse(String(messageCall?.[1]?.body));
+		expect(requestBody.system).toBe('rules');
+		expect(requestBody.tools).toMatchObject({ bash: false, write: false, task: false });
+		expect(
+			fetchImpl.mock.calls.some(
+				([url, init]) => String(url).endsWith('/session/session-1') && init?.method === 'DELETE'
+			)
+		).toBe(true);
 	});
 });

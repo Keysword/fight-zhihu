@@ -10,6 +10,8 @@ export interface ModelConfiguration {
 	apiKey: string;
 	model: string;
 	isZhihu: boolean;
+	protocol?: 'opencode';
+	username?: string;
 }
 
 export interface ModelClient {
@@ -41,6 +43,16 @@ export function resolveModelConfiguration(
 			isZhihu: values.AGENT_API_URL.includes('developer.zhihu.com')
 		};
 	}
+	if (values.OPENCODE_SERVER_URL && values.OPENCODE_SERVER_PASSWORD) {
+		return {
+			url: values.OPENCODE_SERVER_URL,
+			apiKey: values.OPENCODE_SERVER_PASSWORD,
+			model: 'server-default',
+			isZhihu: false,
+			protocol: 'opencode',
+			username: values.OPENCODE_SERVER_USERNAME || 'opencode'
+		};
+	}
 	if (values.ZHIHU_ACCESS_SECRET) {
 		return {
 			url: 'https://developer.zhihu.com/v1/chat/completions',
@@ -58,6 +70,9 @@ export function createModelClient(
 ): ModelClient {
 	const fetchImpl = options.fetchImpl ?? fetch;
 	const now = options.now ?? Date.now;
+	if (configuration.protocol === 'opencode') {
+		return createOpenCodeModelClient(configuration, fetchImpl);
+	}
 
 	return {
 		async complete(messages) {
@@ -89,6 +104,82 @@ export function createModelClient(
 				throw new ModelClientError('Agent 模型没有返回可用动作');
 			}
 			return content;
+		}
+	};
+}
+
+function createOpenCodeModelClient(
+	configuration: ModelConfiguration,
+	fetchImpl: typeof fetch
+): ModelClient {
+	const origin = configuration.url.replace(/\/$/, '');
+	const authorization = `Basic ${Buffer.from(`${configuration.username ?? 'opencode'}:${configuration.apiKey}`).toString('base64')}`;
+	const headers = { Authorization: authorization, 'Content-Type': 'application/json' };
+
+	async function request(path: string, init: RequestInit): Promise<Response> {
+		let response: Response;
+		try {
+			response = await fetchImpl(`${origin}${path}`, { ...init, headers });
+		} catch {
+			throw new ModelClientError('通用 Agent 服务暂时无法连接');
+		}
+		if (!response.ok)
+			throw new ModelClientError(`通用 Agent 服务请求失败（HTTP ${response.status}）`);
+		return response;
+	}
+
+	return {
+		async complete(messages) {
+			const sessionResponse = await request('/session', {
+				method: 'POST',
+				body: JSON.stringify({ title: 'Background Board decision turn' })
+			});
+			const session = (await sessionResponse.json()) as { id?: unknown };
+			if (typeof session.id !== 'string') throw new ModelClientError('通用 Agent 服务未创建会话');
+			try {
+				const system = messages.find((message) => message.role === 'system')?.content ?? '';
+				const conversation = messages
+					.filter((message) => message.role !== 'system')
+					.map((message) => `${message.role}: ${message.content}`)
+					.join('\n\n');
+				const response = await request(`/session/${session.id}/message`, {
+					method: 'POST',
+					body: JSON.stringify({
+						system,
+						tools: {
+							bash: false,
+							edit: false,
+							write: false,
+							read: false,
+							glob: false,
+							grep: false,
+							webfetch: false,
+							websearch: false,
+							task: false,
+							skill: false,
+							todowrite: false,
+							todoread: false
+						},
+						parts: [{ type: 'text', text: conversation }]
+					})
+				});
+				const payload = (await response.json()) as {
+					parts?: Array<{ type?: unknown; text?: unknown }>;
+				};
+				const content = payload.parts?.find(
+					(part) => part.type === 'text' && typeof part.text === 'string'
+				)?.text;
+				if (typeof content !== 'string' || !content.trim()) {
+					throw new ModelClientError('通用 Agent 服务没有返回可用动作');
+				}
+				return content;
+			} finally {
+				try {
+					await request(`/session/${session.id}`, { method: 'DELETE' });
+				} catch {
+					// A leaked short-lived inference session must not mask a valid model response.
+				}
+			}
 		}
 	};
 }
