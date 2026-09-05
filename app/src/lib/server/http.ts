@@ -5,10 +5,7 @@ import { AgentLimitError } from '$lib/server/agent/runtime';
 import { AgentProtocolError } from '$lib/server/agent/protocol';
 import { AgentSafetyError } from '$lib/server/agent/tools';
 import { ModelClientError, ModelConfigurationError } from '$lib/server/agent/model-client';
-import {
-	CaseNotFoundError,
-	RevisionConflictError
-} from '$lib/server/cases/repository';
+import { CaseNotFoundError, RevisionConflictError } from '$lib/server/cases/repository';
 import { ZhihuApiError, ZhihuRateLimitError } from '$lib/server/zhihu/client';
 
 const MAX_BODY_BYTES = 100_000;
@@ -40,7 +37,8 @@ export function apiError(error: unknown): Response {
 	if (error instanceof z.ZodError || error instanceof RequestBodyError) {
 		status = 400;
 		code = 'INVALID_REQUEST';
-		message = error instanceof z.ZodError ? error.issues[0]?.message || '输入不完整' : error.message;
+		message =
+			error instanceof z.ZodError ? error.issues[0]?.message || '输入不完整' : error.message;
 	} else if (error instanceof CaseNotFoundError) {
 		status = 404;
 		code = 'CASE_NOT_FOUND';

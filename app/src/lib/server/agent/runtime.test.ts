@@ -12,7 +12,8 @@ import { AgentLimitError, AgentSafetyError, createAgentRuntime } from './runtime
 const directories: string[] = [];
 
 afterEach(() => {
-	for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true });
+	for (const directory of directories.splice(0))
+		rmSync(directory, { recursive: true, force: true });
 });
 
 function repository() {
@@ -55,7 +56,8 @@ function validBoard(caseId: string, evidenceId: string): BackgroundBoard {
 			contactParticipantId: 'hr',
 			question: '房间是否分配？',
 			why: '这是入住的关键缺口',
-			message: '您好，我了解到住宿以邮件为准，但尚未收到房间信息，想请您协助确认房间是否已经分配，谢谢。',
+			message:
+				'您好，我了解到住宿以邮件为准，但尚未收到房间信息，想请您协助确认房间是否已经分配，谢谢。',
 			branches: [{ when: '已分配', then: '确认钥匙交付方式' }]
 		},
 		externalClues: [],
@@ -91,9 +93,16 @@ const clue: ExternalClue = {
 describe('stateful agent runtime', () => {
 	it('follows the model-selected order and persists the board', async () => {
 		const repo = repository();
-		const created = repo.createCase({ title: '宿舍入住', goal: '确认能否入住', confusion: '没有房间号' });
+		const created = repo.createCase({
+			title: '宿舍入住',
+			goal: '确认能否入住',
+			confusion: '没有房间号'
+		});
 		const evidence = repo.appendEvidence(created.id, {
-			kind: 'message', content: '人力说以邮件为准', sourceLabel: '人力', occurredAt: null
+			kind: 'message',
+			content: '人力说以邮件为准',
+			sourceLabel: '人力',
+			occurredAt: null
 		});
 		const board = validBoard(created.id, evidence.id);
 		const model = scriptedModel([
@@ -112,7 +121,9 @@ describe('stateful agent runtime', () => {
 		expect(repo.getCase(created.id)?.board?.keyCompleter?.participantId).toBe('hr');
 		expect(zhihu.searchZhihu).toHaveBeenCalledTimes(1);
 		expect(model.calls[1].some((message) => message.content.includes('zhihu-42'))).toBe(true);
-		expect(repo.listEvents(created.id).filter((event) => event.type === 'agent.action')).toHaveLength(3);
+		expect(
+			repo.listEvents(created.id).filter((event) => event.type === 'agent.action')
+		).toHaveLength(3);
 		repo.close();
 	});
 
@@ -126,9 +137,9 @@ describe('stateful agent runtime', () => {
 		]);
 		const zhihu = { searchZhihu: vi.fn(async () => []), searchGlobal: vi.fn(async () => []) };
 
-		await expect(createAgentRuntime({ repository: repo, model, zhihu }).run(created.id)).rejects.toBeInstanceOf(
-			AgentLimitError
-		);
+		await expect(
+			createAgentRuntime({ repository: repo, model, zhihu }).run(created.id)
+		).rejects.toBeInstanceOf(AgentLimitError);
 		expect(zhihu.searchZhihu).toHaveBeenCalledTimes(1);
 		expect(zhihu.searchGlobal).toHaveBeenCalledTimes(1);
 		repo.close();
@@ -143,9 +154,9 @@ describe('stateful agent runtime', () => {
 		]);
 		const zhihu = { searchZhihu: vi.fn(async () => []), searchGlobal: vi.fn(async () => []) };
 
-		await expect(createAgentRuntime({ repository: repo, model, zhihu }).run(created.id)).rejects.toBeInstanceOf(
-			AgentSafetyError
-		);
+		await expect(
+			createAgentRuntime({ repository: repo, model, zhihu }).run(created.id)
+		).rejects.toBeInstanceOf(AgentSafetyError);
 		expect(repo.getCase(created.id)?.board).toBeNull();
 		repo.close();
 	});
@@ -158,7 +169,10 @@ describe('stateful agent runtime', () => {
 			confusion: '不清楚'
 		});
 		const evidence = baseRepo.appendEvidence(created.id, {
-			kind: 'note', content: '已有证据', sourceLabel: '本人', occurredAt: null
+			kind: 'note',
+			content: '已有证据',
+			sourceLabel: '本人',
+			occurredAt: null
 		});
 		const board = validBoard(created.id, evidence.id);
 		const conflictingRepo = {
@@ -182,20 +196,27 @@ describe('stateful agent runtime', () => {
 	it('stops after six autonomous decisions', async () => {
 		const repo = repository();
 		const created = repo.createCase({
-			title: '宿舍入住', goal: '确认能否入住', confusion: '没有房间号'
+			title: '宿舍入住',
+			goal: '确认能否入住',
+			confusion: '没有房间号'
 		});
 		const evidence = repo.appendEvidence(created.id, {
-			kind: 'note', content: '人力说以邮件为准', sourceLabel: '本人', occurredAt: null
+			kind: 'note',
+			content: '人力说以邮件为准',
+			sourceLabel: '本人',
+			occurredAt: null
 		});
 		const action = JSON.stringify({
-			type: 'propose_board_patch', board: validBoard(created.id, evidence.id), summary: '持续整理'
+			type: 'propose_board_patch',
+			board: validBoard(created.id, evidence.id),
+			summary: '持续整理'
 		});
 		const model = scriptedModel([action]);
 		const zhihu = { searchZhihu: vi.fn(async () => []), searchGlobal: vi.fn(async () => []) };
 
-		await expect(createAgentRuntime({ repository: repo, model, zhihu }).run(created.id)).rejects.toBeInstanceOf(
-			AgentLimitError
-		);
+		await expect(
+			createAgentRuntime({ repository: repo, model, zhihu }).run(created.id)
+		).rejects.toBeInstanceOf(AgentLimitError);
 		expect(model.calls).toHaveLength(6);
 		expect(repo.listEvents(created.id).at(-1)?.type).toBe('agent.limit');
 		repo.close();
@@ -219,15 +240,18 @@ describe('stateful agent runtime', () => {
 		repo.appendEvent(demo.id, { type: 'case.demo', payload: { fixture: 'dorm' } });
 		const zhihu = { searchZhihu: vi.fn(async () => []), searchGlobal: vi.fn(async () => []) };
 
-		await expect(createAgentRuntime({ repository: repo, model: null, zhihu }).run(demo.id)).resolves.toMatchObject({
-			outcome: 'fallback', revision: 1
+		await expect(
+			createAgentRuntime({ repository: repo, model: null, zhihu }).run(demo.id)
+		).resolves.toMatchObject({
+			outcome: 'fallback',
+			revision: 1
 		});
 		expect(repo.getCase(demo.id)?.board?.nextAction?.message).toContain('房间是否已经分配');
 
 		const regular = repo.createCase({ title: '普通案例', goal: '解决问题', confusion: '背景不清' });
-		await expect(createAgentRuntime({ repository: repo, model: null, zhihu }).run(regular.id)).rejects.toBeInstanceOf(
-			ModelConfigurationError
-		);
+		await expect(
+			createAgentRuntime({ repository: repo, model: null, zhihu }).run(regular.id)
+		).rejects.toBeInstanceOf(ModelConfigurationError);
 		repo.close();
 	});
 });

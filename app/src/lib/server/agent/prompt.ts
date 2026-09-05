@@ -21,7 +21,10 @@ export const AGENT_CONSTITUTION = `你是“背景板”的通用案例 Agent。
 
 必须输出纯 JSON 或单个 json 代码块，不要输出其他文字。`;
 
-export function buildAgentMessages(caseRecord: CaseRecord, recentEvents: AgentEvent[]): ModelMessage[] {
+export function buildAgentMessages(
+	caseRecord: CaseRecord,
+	recentEvents: AgentEvent[]
+): ModelMessage[] {
 	const safeCase = {
 		id: caseRecord.id,
 		title: caseRecord.title,

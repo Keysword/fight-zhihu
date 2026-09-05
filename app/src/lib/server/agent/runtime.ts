@@ -5,7 +5,7 @@ import { buildDormDemoFallback } from './fallback';
 import { ModelConfigurationError, type ModelClient, type ModelMessage } from './model-client';
 import { buildAgentMessages } from './prompt';
 import { parseAgentAction, type AgentAction } from './protocol';
-import { AgentSafetyError, validateBoardForCase } from './tools';
+import { validateBoardForCase } from './tools';
 
 const MAX_TURNS = 6;
 const MAX_SEARCHES = 2;
@@ -93,7 +93,10 @@ export function createAgentRuntime(dependencies: RuntimeDependencies) {
 					throw error;
 				}
 				const action = parseAgentAction(rawAction);
-				repository.appendEvent(caseId, { type: 'agent.action', payload: actionEventPayload(action) });
+				repository.appendEvent(caseId, {
+					type: 'agent.action',
+					payload: actionEventPayload(action)
+				});
 				messages.push({ role: 'assistant', content: rawAction });
 
 				switch (action.type) {

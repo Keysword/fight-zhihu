@@ -19,7 +19,8 @@ export function buildDormDemoFallback(caseRecord: CaseRecord): BackgroundBoard |
 	board.goal = caseRecord.goal;
 	board.updatedAt = new Date().toISOString();
 	for (const claim of board.claims) claim.evidenceIds = mapIds(claim.evidenceIds);
-	for (const participant of board.participants) participant.evidenceIds = mapIds(participant.evidenceIds);
+	for (const participant of board.participants)
+		participant.evidenceIds = mapIds(participant.evidenceIds);
 	if (board.keyCompleter) board.keyCompleter.evidenceIds = mapIds(board.keyCompleter.evidenceIds);
 	return board;
 }

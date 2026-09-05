@@ -13,16 +13,25 @@ describe('model client', () => {
 	});
 
 	it('sends only the portable request fields and returns assistant content', async () => {
-		const fetchImpl = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+		const fetchImpl = vi.fn<typeof fetch>(() =>
 			Promise.resolve(
 				new Response(
-					JSON.stringify({ choices: [{ message: { role: 'assistant', content: '{"type":"finish","summary":"完成"}' } }] }),
+					JSON.stringify({
+						choices: [
+							{ message: { role: 'assistant', content: '{"type":"finish","summary":"完成"}' } }
+						]
+					}),
 					{ status: 200 }
 				)
 			)
 		);
 		const client = createModelClient(
-			{ url: 'https://example.com/v1/chat/completions', apiKey: 'key', model: 'agent', isZhihu: false },
+			{
+				url: 'https://example.com/v1/chat/completions',
+				apiKey: 'key',
+				model: 'agent',
+				isZhihu: false
+			},
 			{ fetchImpl, now: () => 1_800_000_000_000 }
 		);
 		const messages = [{ role: 'user' as const, content: '分析这个案例' }];
@@ -34,7 +43,7 @@ describe('model client', () => {
 	});
 
 	it('adds timestamp authentication for Zhihu and rejects empty responses', async () => {
-		const fetchImpl = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+		const fetchImpl = vi.fn<typeof fetch>(() =>
 			Promise.resolve(new Response(JSON.stringify({ choices: [] }), { status: 200 }))
 		);
 		const client = createModelClient(

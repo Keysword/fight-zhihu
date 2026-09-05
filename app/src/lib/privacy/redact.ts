@@ -21,7 +21,8 @@ export interface RedactionResult {
 const RULES: Array<{ type: RedactionType; pattern: RegExp; replacement: string }> = [
 	{
 		type: 'identity',
-		pattern: /(?<!\d)\d{6}(?:18|19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx](?!\d)/g,
+		pattern:
+			/(?<!\d)\d{6}(?:18|19|20)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{3}[\dXx](?!\d)/g,
 		replacement: '[证件号码]'
 	},
 	{
@@ -49,7 +50,10 @@ function replaceAndRecord(
 	});
 }
 
-export function redactText(text: string, replacements: RedactionReplacement[] = []): RedactionResult {
+export function redactText(
+	text: string,
+	replacements: RedactionReplacement[] = []
+): RedactionResult {
 	const findings: RedactionFinding[] = [];
 	let redacted = text;
 

@@ -51,7 +51,10 @@ export const agentActionSchema = z.discriminatedUnion('type', [
 export type AgentAction = z.infer<typeof agentActionSchema>;
 
 export class AgentProtocolError extends Error {
-	constructor(message: string, readonly cause?: unknown) {
+	constructor(
+		message: string,
+		readonly cause?: unknown
+	) {
 		super(message);
 		this.name = 'AgentProtocolError';
 	}

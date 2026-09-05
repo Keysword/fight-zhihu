@@ -94,7 +94,10 @@ export interface CaseRepository {
 	getCase(caseId: string): CaseRecord | null;
 	appendEvidence(caseId: string, input: z.input<typeof newEvidenceSchema>): Evidence;
 	saveBoard(caseId: string, expectedRevision: number, board: BackgroundBoard): CaseRecord;
-	appendEvent(caseId: string, event: { type: string; payload: Record<string, unknown> }): AgentEvent;
+	appendEvent(
+		caseId: string,
+		event: { type: string; payload: Record<string, unknown> }
+	): AgentEvent;
 	listEvents(caseId: string): AgentEvent[];
 	close(): void;
 }
@@ -104,8 +107,7 @@ export function createCaseRepository(path: string): CaseRepository {
 
 	function requireCase(caseId: string): CaseRow {
 		const row = database.prepare('SELECT * FROM cases WHERE id = ?').get(caseId) as
-			| CaseRow
-			| undefined;
+			CaseRow | undefined;
 		if (!row) throw new CaseNotFoundError(caseId);
 		return row;
 	}
@@ -149,8 +151,7 @@ export function createCaseRepository(path: string): CaseRepository {
 
 		getCase(caseId) {
 			const row = database.prepare('SELECT * FROM cases WHERE id = ?').get(caseId) as
-				| CaseRow
-				| undefined;
+				CaseRow | undefined;
 			return row ? recordFromRow(row) : null;
 		},
 
@@ -191,7 +192,13 @@ export function createCaseRepository(path: string): CaseRepository {
 				.prepare(
 					'UPDATE cases SET board_json = ?, stage = ?, revision = revision + 1, updated_at = ? WHERE id = ? AND revision = ?'
 				)
-				.run(JSON.stringify({ ...board, updatedAt: now }), board.stage, now, caseId, expectedRevision);
+				.run(
+					JSON.stringify({ ...board, updatedAt: now }),
+					board.stage,
+					now,
+					caseId,
+					expectedRevision
+				);
 			if (Number(result.changes) !== 1) {
 				if (!this.getCase(caseId)) throw new CaseNotFoundError(caseId);
 				throw new RevisionConflictError();

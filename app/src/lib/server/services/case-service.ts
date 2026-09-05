@@ -118,7 +118,11 @@ export function createCaseService(dependencies: {
 			});
 			repository.appendEvent(caseId, {
 				type: 'evidence.added',
-				payload: { evidenceId: evidence.id, kind: evidence.kind, redactionCount: content.findings.length }
+				payload: {
+					evidenceId: evidence.id,
+					kind: evidence.kind,
+					redactionCount: content.findings.length
+				}
 			});
 			const run = await runner.run(caseId);
 			return { ...view(caseId), run, redactionCount: content.findings.length };

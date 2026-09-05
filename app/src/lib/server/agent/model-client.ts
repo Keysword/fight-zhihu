@@ -83,8 +83,8 @@ export function createModelClient(
 			} catch {
 				throw new ModelClientError('Agent 模型返回了无法解析的数据');
 			}
-			const content = (payload as { choices?: Array<{ message?: { content?: unknown } }> }).choices?.[0]
-				?.message?.content;
+			const content = (payload as { choices?: Array<{ message?: { content?: unknown } }> })
+				.choices?.[0]?.message?.content;
 			if (typeof content !== 'string' || !content.trim()) {
 				throw new ModelClientError('Agent 模型没有返回可用动作');
 			}

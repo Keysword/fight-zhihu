@@ -17,6 +17,7 @@ app/coverage/
 
 # Runtime state and credentials
 app/.data/
+app/data/
 .env
 .env.*
 !.env.example

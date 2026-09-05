@@ -42,7 +42,11 @@ function cleanUrl(rawUrl: string): string {
 }
 
 function cleanExcerpt(content: string): string {
-	return content.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().slice(0, 500);
+	return content
+		.replace(/<[^>]+>/g, '')
+		.replace(/\s+/g, ' ')
+		.trim()
+		.slice(0, 500);
 }
 
 function mapItem(item: ZhihuSearchItem, source: 'zhihu' | 'global'): ExternalClue {
@@ -52,9 +56,7 @@ function mapItem(item: ZhihuSearchItem, source: 'zhihu' | 'global'): ExternalClu
 		excerpt: cleanExcerpt(item.ContentText),
 		url: cleanUrl(item.Url),
 		author: item.AuthorName || '未知作者',
-		editedAt: Number.isFinite(item.EditTime)
-			? new Date(item.EditTime * 1_000).toISOString()
-			: null,
+		editedAt: Number.isFinite(item.EditTime) ? new Date(item.EditTime * 1_000).toISOString() : null,
 		authorityLevel: item.AuthorityLevel || null,
 		source,
 		relevance: '这是外部经验线索，可用来补充提问方向',
@@ -98,7 +100,8 @@ export function createZhihuClient(options: ZhihuClientOptions): ZhihuClient {
 		} catch {
 			throw new ZhihuApiError('知乎开放平台返回了无法解析的数据');
 		}
-		if (payload.Code !== 0) throw new ZhihuApiError(payload.Message || '知乎搜索失败', payload.Code);
+		if (payload.Code !== 0)
+			throw new ZhihuApiError(payload.Message || '知乎搜索失败', payload.Code);
 		return (payload.Data?.Items ?? []).map((item) => mapItem(item, source));
 	}
 

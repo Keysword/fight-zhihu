@@ -23,7 +23,7 @@ const successPayload = {
 
 describe('Zhihu search client', () => {
 	it('uses the documented endpoint, query names, and authentication headers', async () => {
-		const fetchImpl = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+		const fetchImpl = vi.fn<typeof fetch>(() =>
 			Promise.resolve(new Response(JSON.stringify(successPayload), { status: 200 }))
 		);
 		const client = createZhihuClient({
@@ -57,7 +57,7 @@ describe('Zhihu search client', () => {
 	});
 
 	it('uses the global endpoint and caps result counts', async () => {
-		const fetchImpl = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+		const fetchImpl = vi.fn<typeof fetch>(() =>
 			Promise.resolve(new Response(JSON.stringify(successPayload), { status: 200 }))
 		);
 		const client = createZhihuClient({ accessSecret: 'test-secret', fetchImpl });
@@ -68,11 +68,12 @@ describe('Zhihu search client', () => {
 	});
 
 	it('returns an empty clue list for an empty successful response', async () => {
-		const fetchImpl = vi.fn(
-			async (_input: RequestInfo | URL, _init?: RequestInit) =>
+		const fetchImpl = vi.fn<typeof fetch>(() =>
+			Promise.resolve(
 				new Response(JSON.stringify({ Code: 0, Message: 'success', Data: { Items: [] } }), {
 					status: 200
 				})
+			)
 		);
 		const client = createZhihuClient({ accessSecret: 'test-secret', fetchImpl });
 		await expect(client.searchZhihu('没有结果')).resolves.toEqual([]);
@@ -80,11 +81,12 @@ describe('Zhihu search client', () => {
 	});
 
 	it('surfaces platform and rate-limit failures without retrying', async () => {
-		const platformFetch = vi.fn(
-			async (_input: RequestInfo | URL, _init?: RequestInit) =>
+		const platformFetch = vi.fn<typeof fetch>(() =>
+			Promise.resolve(
 				new Response(JSON.stringify({ Code: 20001, Message: '鉴权失败' }), { status: 200 })
+			)
 		);
-		const limitedFetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+		const limitedFetch = vi.fn<typeof fetch>(() =>
 			Promise.resolve(new Response('too many requests', { status: 429 }))
 		);
 

@@ -12,7 +12,7 @@ export const GET: RequestHandler = async () => {
 
 export const POST: RequestHandler = async ({ request }) => {
 	try {
-		return ok(getCaseService().createCase(await readJsonBody(request) as never), { status: 201 });
+		return ok(getCaseService().createCase((await readJsonBody(request)) as never), { status: 201 });
 	} catch (error) {
 		return apiError(error);
 	}

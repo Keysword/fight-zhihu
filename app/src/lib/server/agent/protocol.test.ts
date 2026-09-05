@@ -20,9 +20,7 @@ describe('agent protocol', () => {
 
 	it('rejects prose, unsupported tools, and malformed payloads', () => {
 		expect(() => parseAgentAction('我建议先去问人力。')).toThrow(AgentProtocolError);
-		expect(() => parseAgentAction('{"type":"browse_web","query":"test"}')).toThrow(
-			/不符合协议/
-		);
+		expect(() => parseAgentAction('{"type":"browse_web","query":"test"}')).toThrow(/不符合协议/);
 		expect(() => parseAgentAction('{"type":"search_zhihu","query":"","count":50}')).toThrow(
 			AgentProtocolError
 		);
@@ -50,7 +48,9 @@ describe('agent protocol', () => {
 			updatedAt: new Date().toISOString()
 		};
 		expect(() =>
-			parseAgentAction(JSON.stringify({ type: 'propose_board_patch', board: invalidBoard, summary: '更新' }))
+			parseAgentAction(
+				JSON.stringify({ type: 'propose_board_patch', board: invalidBoard, summary: '更新' })
+			)
 		).toThrow(AgentProtocolError);
 	});
 });
