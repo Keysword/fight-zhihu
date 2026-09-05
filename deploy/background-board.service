@@ -1,0 +1,37 @@
+[Unit]
+Description=Background Board stateful agent web application
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=background-board
+Group=background-board
+WorkingDirectory=/srv/background-board/current
+EnvironmentFile=/etc/background-board.env
+Environment=HOST=127.0.0.1
+Environment=PORT=3210
+Environment=ORIGIN=https://projects.wangjian7410.cc
+Environment=PROTOCOL_HEADER=x-forwarded-proto
+Environment=HOST_HEADER=x-forwarded-host
+Environment=ADDRESS_HEADER=x-forwarded-for
+Environment=XFF_DEPTH=1
+Environment=BODY_SIZE_LIMIT=2097152
+ExecStart=/usr/bin/node build
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=20
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ReadWritePaths=/srv/background-board/data
+CapabilityBoundingSet=
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target
