@@ -4,11 +4,9 @@
 
 首次安装：
 
-1. 创建系统用户 `background-board` 和运行目录。
-2. 将 `background-board.service` 安装到 `/etc/systemd/system/`。
-3. 将 Nginx location snippet 安装到 `/etc/nginx/snippets/background-board.conf`，并在 `projects.wangjian7410.cc` 的 TLS server 中 include。
-4. 通过标准输入或宿主 Secret Store 创建 `/etc/background-board.env`，权限设为 `0600`；不要把密钥写入仓库或 shell 参数。
-5. 执行 `./deploy/deploy.sh`。
+1. 通过标准输入或宿主 Secret Store 创建 `/etc/background-board.env`；不要把密钥写入仓库或 shell 参数。部署脚本会校正所有者和 `0600` 权限，但不会生成或覆盖 Secret。
+2. 在目标 TLS server 中加入 `include /etc/nginx/snippets/background-board.conf;`。脚本会安装 snippet，并在发现 active 配置没有该 location 时中止。
+3. 执行 `./deploy/deploy.sh`。脚本会幂等创建系统用户和运行目录、安装 systemd unit/snippet、验证 Nginx、完成原子发布，并检查本机和公网健康端点。
 
 回滚到上一版本：
 
