@@ -43,7 +43,7 @@
 - Modify: `app/package.json`
 - Test: `app/src/demo.spec.ts`
 
-- [ ] **Step 1: Initialize version control**
+- [x] **Step 1: Initialize version control**
 
 Run:
 
@@ -54,7 +54,7 @@ git branch -M main
 
 Expected: an empty repository on branch `main` without changing existing research files.
 
-- [ ] **Step 2: Scaffold the application and test tools**
+- [x] **Step 2: Scaffold the application and test tools**
 
 Run:
 
@@ -67,7 +67,7 @@ cd app && pnpm add zod
 
 Expected: SvelteKit app with Node adapter, Vitest, Playwright, ESLint and Prettier.
 
-- [ ] **Step 3: Configure the deployment base path**
+- [x] **Step 3: Configure the deployment base path**
 
 Set `app/svelte.config.js` to use `adapter-node`, precompression and the fixed base path:
 
@@ -87,7 +87,7 @@ const config = {
 export default config;
 ```
 
-- [ ] **Step 4: Run foundation checks**
+- [x] **Step 4: Run foundation checks**
 
 Run:
 
@@ -100,7 +100,7 @@ pnpm build
 
 Expected: all commands exit 0 and `app/build/index.js` exists.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add .
@@ -116,7 +116,7 @@ git commit -m "chore: scaffold background board application"
 - Test: `app/src/lib/domain/schemas.test.ts`
 - Test: `app/src/lib/domain/demo-case.test.ts`
 
-- [ ] **Step 1: Write failing schema tests**
+- [x] **Step 1: Write failing schema tests**
 
 Tests must prove that a confirmed fact requires at least one evidence ID, an inference requires rationale, and a key completer requires rationale, confidence and uncertainty:
 
@@ -126,13 +126,13 @@ expect(() => ClaimSchema.parse({ id: 'c2', kind: 'inference', text: '人力能�
 expect(KeyCompleterSchema.parse(validCompleter).confidence).toBe('high');
 ```
 
-- [ ] **Step 2: Run tests and confirm failure**
+- [x] **Step 2: Run tests and confirm failure**
 
 Run `cd app && pnpm vitest run src/lib/domain/schemas.test.ts`.
 
 Expected: FAIL because the schemas do not exist.
 
-- [ ] **Step 3: Implement domain types and schemas**
+- [x] **Step 3: Implement domain types and schemas**
 
 Define these discriminated states and top-level board contract:
 
@@ -158,11 +158,11 @@ export interface BackgroundBoard {
 
 Zod schemas must mirror the interfaces exactly and reject unknown keys at model boundaries.
 
-- [ ] **Step 4: Add the dorm demo fixture**
+- [x] **Step 4: Add the dorm demo fixture**
 
 Create anonymized evidence for department contact, guide colleague, HR and property management. The cached board must split admission, accommodation eligibility, room assignment, key handoff and official notification into separate claims. It must identify HR/accommodation management as the most likely key completer without claiming malicious intent.
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 Run:
 
@@ -182,7 +182,7 @@ Expected: tests pass and type checking exits 0.
 - Create: `app/src/lib/privacy/redact.ts`
 - Test: `app/src/lib/privacy/redact.test.ts`
 
-- [ ] **Step 1: Write failing redaction tests**
+- [x] **Step 1: Write failing redaction tests**
 
 Cover mainland phone numbers, 18-character identity numbers, email addresses and explicit user-defined replacements:
 
@@ -193,7 +193,7 @@ expect(redactText('邮件 a@example.com').redacted).toBe('邮件 [邮箱]');
 expect(redactText('联系赵老师', [{ from: '赵老师', to: '人力老师' }]).redacted).toBe('联系人力老师');
 ```
 
-- [ ] **Step 2: Confirm failure, implement, then verify**
+- [x] **Step 2: Confirm failure, implement, then verify**
 
 Implement `redactText(text, replacements)` returning `{ redacted, findings }`. Findings include type, original span and replacement, but API logs must never print original values.
 
@@ -201,7 +201,7 @@ Run `cd app && pnpm vitest run src/lib/privacy/redact.test.ts`.
 
 Expected: all redaction tests pass.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add app/src/lib/privacy
@@ -215,7 +215,7 @@ git commit -m "feat: preview and redact sensitive case material"
 - Create: `app/src/lib/server/cases/repository.ts`
 - Test: `app/src/lib/server/cases/repository.test.ts`
 
-- [ ] **Step 1: Write repository contract tests**
+- [x] **Step 1: Write repository contract tests**
 
 Use a temporary SQLite database and prove create/read, evidence append, optimistic board update and ordered event history:
 
@@ -228,15 +228,15 @@ expect(repo.getCase(created.id)?.evidence).toHaveLength(1);
 expect(repo.listEvents(created.id)[0].type).toBe('agent.action');
 ```
 
-- [ ] **Step 2: Confirm failure and implement SQLite schema**
+- [x] **Step 2: Confirm failure and implement SQLite schema**
 
 Create `cases`, `evidence` and `events` tables. Store board and event payloads as validated JSON. Enable WAL mode, foreign keys and a busy timeout. Use `crypto.randomUUID()` for unguessable case IDs.
 
-- [ ] **Step 3: Implement optimistic board updates**
+- [x] **Step 3: Implement optimistic board updates**
 
 `saveBoard(caseId, expectedRevision, board)` must increment revision in one transaction and throw `RevisionConflictError` if another update won.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 Run `cd app && pnpm vitest run src/lib/server/cases/repository.test.ts`.
 
@@ -254,11 +254,11 @@ git commit -m "feat: persist stateful agent cases and events"
 - Create: `app/src/lib/server/zhihu/types.ts`
 - Test: `app/src/lib/server/zhihu/client.test.ts`
 
-- [ ] **Step 1: Write failing HTTP client tests**
+- [x] **Step 1: Write failing HTTP client tests**
 
 Inject a fake `fetch` and assert that search uses the documented endpoint, `Query`/`Count`, Bearer authorization and a seconds-level `X-Request-Timestamp`. Also assert that non-zero `Code`, rate limits and empty results become typed errors or empty arrays without retries.
 
-- [ ] **Step 2: Implement the client**
+- [x] **Step 2: Implement the client**
 
 Expose:
 
@@ -269,7 +269,7 @@ searchGlobal(query: string, count = 5): Promise<ExternalClue[]>;
 
 Read `ZHIHU_ACCESS_SECRET` only in server code. Strip tracking parameters for display, preserve title, excerpt, author, edit time, authority level and original source type, and label every item as an external clue rather than a fact.
 
-- [ ] **Step 3: Verify and commit**
+- [x] **Step 3: Verify and commit**
 
 Run `cd app && pnpm vitest run src/lib/server/zhihu/client.test.ts`.
 
@@ -289,7 +289,7 @@ git commit -m "feat: add constrained Zhihu research tool"
 - Test: `app/src/lib/server/agent/protocol.test.ts`
 - Test: `app/src/lib/server/agent/model-client.test.ts`
 
-- [ ] **Step 1: Write failing protocol tests**
+- [x] **Step 1: Write failing protocol tests**
 
 Accept only these autonomous actions:
 
@@ -304,15 +304,15 @@ type AgentAction =
 
 Reject unknown tools, markdown-only responses, facts without evidence and key completers without rationale.
 
-- [ ] **Step 2: Implement strict JSON extraction**
+- [x] **Step 2: Implement strict JSON extraction**
 
 Parse a direct JSON object or one fenced JSON block, validate with Zod and return a typed protocol error on failure. Never evaluate model output as code.
 
-- [ ] **Step 3: Implement configurable model client**
+- [x] **Step 3: Implement configurable model client**
 
 Use `AGENT_API_URL`, `AGENT_API_KEY` and `AGENT_MODEL`. When only `ZHIHU_ACCESS_SECRET` is present, default to `https://developer.zhihu.com/v1/chat/completions` with model `zhida-agent`. Send only `model`, `messages` and `stream: false` for Zhihu compatibility.
 
-- [ ] **Step 4: Write the agent constitution**
+- [x] **Step 4: Write the agent constitution**
 
 The system prompt must state:
 
@@ -324,7 +324,7 @@ The system prompt must state:
 - distinguish information capability from intent;
 - output only the validated action JSON, with a short action summary rather than private reasoning.
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 Run `cd app && pnpm vitest run src/lib/server/agent/protocol.test.ts src/lib/server/agent/model-client.test.ts`.
 
@@ -343,27 +343,27 @@ git commit -m "feat: define autonomous background agent protocol"
 - Create: `app/src/lib/server/agent/fallback.ts`
 - Test: `app/src/lib/server/agent/runtime.test.ts`
 
-- [ ] **Step 1: Write a failing autonomy test**
+- [x] **Step 1: Write a failing autonomy test**
 
 Use a scripted fake model whose first action searches Zhihu, second action proposes a board, and third action finishes. Assert that the runtime follows the model-selected order, appends tool results to the conversation, records each event and persists the proposed board.
 
-- [ ] **Step 2: Write failing safety tests**
+- [x] **Step 2: Write failing safety tests**
 
 Assert that the runtime rejects unsupported actions, limits a run to six model turns, limits search to two calls, rejects board patches with unsupported facts, and leaves the previous board intact on revision conflict.
 
-- [ ] **Step 3: Implement the agent loop**
+- [x] **Step 3: Implement the agent loop**
 
 `runAgent(caseId)` loads the case, evidence, current board and recent events; calls the model; executes one or more allowed actions; appends action/result events; and stops on `finish`, `ask_user`, limit or error. There is no fixed action order.
 
-- [ ] **Step 4: Implement the constrained tool registry**
+- [x] **Step 4: Implement the constrained tool registry**
 
 Each tool receives a case-scoped capability object rather than raw database access. Search tools receive only the model-generated abstract query. Board writes pass through Zod, evidence checks, intent-language checks and optimistic revision control.
 
-- [ ] **Step 5: Add demonstration fallback**
+- [x] **Step 5: Add demonstration fallback**
 
 When model configuration or the remote model is unavailable, only the built-in dorm demo may return its cached board. User-created cases must show an actionable configuration/service error rather than pretending a heuristic result came from the agent.
 
-- [ ] **Step 6: Verify and commit**
+- [x] **Step 6: Verify and commit**
 
 Run `cd app && pnpm vitest run src/lib/server/agent/runtime.test.ts`.
 
@@ -386,19 +386,19 @@ git commit -m "feat: run stateful general agent against case blackboards"
 - Create: `app/src/routes/api/cases/[id]/run/+server.ts`
 - Test: `app/src/lib/server/services/case-service.test.ts`
 
-- [ ] **Step 1: Write failing service tests**
+- [x] **Step 1: Write failing service tests**
 
 Cover demo creation, redacted case creation, unknown case IDs, evidence append, agent run response and safe public serialization that omits secrets and internal model messages.
 
-- [ ] **Step 2: Implement the service and routes**
+- [x] **Step 2: Implement the service and routes**
 
 All routes return `{ ok, data }` or `{ ok: false, error: { code, message } }`. Enforce request body limits, reject empty goals/evidence, map typed errors to 400/404/409/429/502, and never return stack traces in production.
 
-- [ ] **Step 3: Add health reporting**
+- [x] **Step 3: Add health reporting**
 
 `GET /api/health` returns application version, database readiness and boolean model/Zhihu configuration flags without returning credential values.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 Run:
 
@@ -431,27 +431,27 @@ git commit -m "feat: expose case and agent APIs"
 - Test: `app/tests/home.spec.ts`
 - Test: `app/tests/demo-case.spec.ts`
 
-- [ ] **Step 1: Write failing browser tests**
+- [x] **Step 1: Write failing browser tests**
 
 The home test must find the product promise, “体验宿舍案例” and “新建一件卡住的事”. The demo test must create the demo, open its board, find the current blocker, key completer rationale, evidence source, copyable help request and agent activity.
 
-- [ ] **Step 2: Build the visual system**
+- [x] **Step 2: Build the visual system**
 
 Use a calm “working dossier” aesthetic rather than a generic dashboard: warm neutral canvas, ink-like typography, blue for confirmed information, amber for unknowns, coral for conflicts and green for actionable state. Use CSS custom properties, visible focus rings, reduced-motion support and a single responsive breakpoint.
 
-- [ ] **Step 3: Build the landing and new-case pages**
+- [x] **Step 3: Build the landing and new-case pages**
 
 Keep landing navigation minimal. The new-case page shows goal, confusion, evidence, local redaction preview and explicit confirmation before sending data to the server.
 
-- [ ] **Step 4: Build the three-column board**
+- [x] **Step 4: Build the three-column board**
 
 Desktop columns are evidence, understanding and action. Mobile order is blocker/action, key completer, claims, evidence and clues. The UI shows agent action summaries, not hidden chain-of-thought.
 
-- [ ] **Step 5: Support case continuation**
+- [x] **Step 5: Support case continuation**
 
 Add an evidence composer to the board. After submission, run the same stateful agent session and visually highlight changed claims, blocker and next action.
 
-- [ ] **Step 6: Verify and commit**
+- [x] **Step 6: Verify and commit**
 
 Run:
 
@@ -473,15 +473,15 @@ git commit -m "feat: deliver mobile-first background board experience"
 - Modify: `app/src/app.html`
 - Test: `app/tests/new-case.spec.ts`
 
-- [ ] **Step 1: Add installable metadata and safe caching**
+- [x] **Step 1: Add installable metadata and safe caching**
 
 Cache only hashed static assets and the application shell. Do not cache API responses containing case data. Add theme color, icons and mobile viewport metadata.
 
-- [ ] **Step 2: Add end-to-end new-case coverage**
+- [x] **Step 2: Add end-to-end new-case coverage**
 
 Test redaction preview, case creation, model-unavailable error, successful mocked agent run, adding a reply and board revision rendering.
 
-- [ ] **Step 3: Run the complete local gate**
+- [x] **Step 3: Run the complete local gate**
 
 Run:
 
@@ -497,7 +497,7 @@ pnpm build
 
 Expected: every command exits 0, no tests are skipped and `build/index.js` exists.
 
-- [ ] **Step 4: Scan for credentials and personal information**
+- [x] **Step 4: Scan for credentials and personal information**
 
 Run:
 
@@ -508,7 +508,7 @@ git grep -nE '雷媛越|赵佳琪|张名芸|谢添羽|010[0-9-]{8,}' -- app || t
 
 Expected: no secret values or real-case personal identifiers in application files.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add app
@@ -523,23 +523,23 @@ git commit -m "feat: harden installable background board PWA"
 - Create: `deploy/deploy.sh`
 - Create: `deploy/README.md`
 
-- [ ] **Step 1: Create the systemd unit**
+- [x] **Step 1: Create the systemd unit**
 
 Run the Node adapter as a dedicated `background-board` system user, with `HOST=127.0.0.1`, `PORT=3210`, trusted proxy headers, `/srv/background-board/data` as writable state and `/etc/background-board.env` as a root-readable environment file. Restart on failure and apply systemd hardening without blocking SQLite writes.
 
-- [ ] **Step 2: Create the Nginx location**
+- [x] **Step 2: Create the Nginx location**
 
 Proxy `/background-board/` to `http://127.0.0.1:3210` while preserving the base path and forwarding trusted protocol/host headers. Set a 2 MiB request limit and a 90-second timeout for agent runs.
 
-- [ ] **Step 3: Create an atomic deployment script**
+- [x] **Step 3: Create an atomic deployment script**
 
 The script must build locally, upload a timestamped archive to `/srv/background-board/releases`, install production dependencies, switch `/srv/background-board/current` atomically, restart the service, verify local health, test Nginx configuration before reload and retain the previous release for rollback.
 
-- [ ] **Step 4: Deploy without exposing credentials**
+- [x] **Step 4: Deploy without exposing credentials**
 
 Transfer the configured Zhihu secret directly from the local secret store or process input into `/etc/background-board.env` with mode `0600`; never place it in the repository, archive, command output or shell history. Configure the default agent endpoint/model and install the Nginx snippet without altering unrelated locations.
 
-- [ ] **Step 5: Verify production**
+- [x] **Step 5: Verify production**
 
 Run server-local and public checks:
 
@@ -551,7 +551,7 @@ curl --fail https://projects.wangjian7410.cc/background-board/
 
 Then execute the demo case through the public API, verify an agent event log exists, confirm a Zhihu search returns source links, inspect service/Nginx logs for errors and verify no credential appears in responses.
 
-- [ ] **Step 6: Commit deployment assets**
+- [x] **Step 6: Commit deployment assets**
 
 ```bash
 git add deploy
@@ -564,19 +564,19 @@ git commit -m "ops: deploy background board agent service"
 - Modify: `README.md`
 - Modify: `docs/superpowers/plans/2026-09-05-background-board-agent.md`
 
-- [ ] **Step 1: Document operation and product usage**
+- [x] **Step 1: Document operation and product usage**
 
 README must contain the public URL, architecture summary, local setup, environment variable names without values, test commands, deployment/rollback commands, privacy model and known P1 omissions.
 
-- [ ] **Step 2: Audit every requirement**
+- [x] **Step 2: Audit every requirement**
 
 Compare the implementation against the approved product-form spec and this plan. Record concrete evidence for the Web/PWA shape, autonomous tool selection, state persistence, evidence-linked board, key completer safety, Zhihu clues, dorm demo, responsive UI, privacy preview, test gates and public deployment.
 
-- [ ] **Step 3: Run final verification**
+- [x] **Step 3: Run final verification**
 
 Repeat the full local gate and public smoke tests from Tasks 10 and 11. Inspect current service status and the latest deployment logs.
 
-- [ ] **Step 4: Mark plan checkboxes and commit**
+- [x] **Step 4: Mark plan checkboxes and commit**
 
 Update this plan only for steps proven by current outputs, then commit documentation:
 
@@ -585,3 +585,16 @@ git add README.md docs/superpowers/plans/2026-09-05-background-board-agent.md
 git commit -m "docs: complete background board delivery audit"
 ```
 
+## Delivery audit — 2026-09-06
+
+- **Web/PWA shape:** SvelteKit serves the landing page, new-case form and responsive three-column board under `/background-board/`; the manifest, icons and service worker are public, while API responses and case pages are excluded from runtime caching.
+- **General Agent:** the bounded runtime accepts only `search_zhihu`, `search_global`, `propose_board_patch`, `ask_user` and `finish`. Scripted tests prove the model chooses action order rather than following a fixed workflow, with six-turn and two-search limits.
+- **State and review:** SQLite persists cases, evidence, event history, formal board revisions and pending proposals. Existing boards never change silently: users inspect highlighted changes, then confirm or discard with optimistic revision checks.
+- **Evidence and safety:** facts require supporting official-notice evidence and lexical support; statements, inferences, unknowns and conflicts stay distinct. Board validation rejects unsupported external clues and motive attribution, while the key-completer card states capability, uncertainty and a respectful question.
+- **Zhihu integration:** mocked HTTP tests cover authenticated Zhihu/global search, error handling and source metadata. Production health reports Zhihu configured; external results remain labeled as clues with source URLs, authorship, time, authority, relevance and staleness fields.
+- **Demonstration and continuation:** the anonymous dorm fixture separates eligibility, room assignment, key handoff and official notice. The public end-to-end run created the board, added a property reply, staged an `actionable` proposal, confirmed revision `1 → 2`, and identified property management as the current information completer.
+- **Privacy and access:** browser preview plus server-side redaction cover phone, identity number, email and custom replacements. Credential/personal-name scans returned no matches. Public case listing is disabled; case UUIDs remain capability links, documented as a P1 access-control limitation.
+- **Verification:** Prettier, ESLint, Svelte diagnostics, 60 Vitest tests, 4 Playwright tests and the Node production build all passed from commit `a6d2988`. Public health, case page, manifest and service worker returned success; systemd is active/enabled, Nginx configuration is valid, environment mode is `0600`, and recent service/Nginx logs contain no matching errors.
+- **Deployment:** release `/srv/background-board/releases/20260906T022133Z` is active at `https://projects.wangjian7410.cc/background-board/`. The deployment script builds, installs, atomically switches releases, restarts the dedicated service and verifies local/public health.
+
+The approved autonomous-Agent decision supersedes the plan's earlier idea of a user-triggered Zhihu-search button: search remains an Agent-selected, constrained action instead of a visible fixed workflow step.
