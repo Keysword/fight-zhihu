@@ -34,7 +34,7 @@ test('opens the dorm case as an evidence-linked background board', async ({ page
 	await expect(page.locator('.blocker-banner')).toHaveClass(/changed/);
 	await expect(page.locator('.claim-slip.changed')).toHaveCount(3);
 	await expect(page.locator('.next-action')).toHaveClass(/changed/);
-	await expect(page.getByText(/本次更新：阻塞点已变化/)).toBeVisible();
+	await expect(page.getByText(/本次更新：.*阻塞点已变化/)).toBeVisible();
 	await page.getByRole('button', { name: '确认并更新背景板' }).click();
 	await expect(page.getByText('第 2 次整理')).toBeVisible();
 	await expect(page.getByLabel('待确认的背景板更新')).toHaveCount(0);

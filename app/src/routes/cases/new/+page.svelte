@@ -1,11 +1,13 @@
 <script lang="ts">
 	import { base, resolve } from '$app/paths';
 	import { goto } from '$app/navigation';
+	import type { EvidenceKind } from '$lib/domain/types';
 	import { parseRedactionReplacements, redactText } from '$lib/privacy/redact';
 	let title = $state('');
 	let goal = $state('');
 	let confusion = $state('');
 	let evidence = $state('');
+	let evidenceKind = $state<EvidenceKind>('message');
 	let sourceLabel = $state('同事 / 通知');
 	let replacementText = $state('');
 	let confirmed = $state(false);
@@ -43,7 +45,7 @@
 					confusion,
 					replacements,
 					evidence: evidence.trim()
-						? [{ kind: 'message', content: evidence, sourceLabel, occurredAt: null }]
+						? [{ kind: evidenceKind, content: evidence, sourceLabel, occurredAt: null }]
 						: []
 				})
 			});
@@ -108,6 +110,16 @@
 				required
 				maxlength="120"
 			/>
+		</div>
+		<div class="field">
+			<label for="evidence-kind">这是什么类型的材料</label>
+			<select id="evidence-kind" bind:value={evidenceKind}>
+				<option value="message">聊天 / 回复</option>
+				<option value="email">邮件</option>
+				<option value="notice">正式通知</option>
+				<option value="call">通话记录</option>
+				<option value="note">个人笔记</option>
+			</select>
 		</div>
 		<div class="field">
 			<label for="evidence">先放一条证据（可选）</label><textarea

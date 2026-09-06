@@ -116,7 +116,9 @@
 <main>
 	<header class="case-head">
 		<div class="case-meta">
-			<StageBadge stage={view.case.stage} /><span>第 {view.case.revision} 次整理</span>
+			<StageBadge stage={board?.stage ?? view.case.stage} /><span
+				>第 {view.case.revision} 次整理</span
+			>
 		</div>
 		<h1>{view.case.title}</h1>
 		<p class="goal-line"><strong>你想做到：</strong>{view.case.goal}</p>
@@ -151,6 +153,7 @@
 				{#if board.keyCompleter}<CompleterCard
 						completer={board.keyCompleter}
 						participants={board.participants}
+						changed={changes.keyCompleter}
 					/>{/if}
 				{#if board.nextAction}<NextActionCard
 						action={board.nextAction}
@@ -240,11 +243,19 @@
 			>{loading ? '正在重新判断…' : '加入证据并继续判断'}</button
 		>
 		{#if failure}<div class="error-box" role="alert">{failure}</div>{/if}
-		{#if changes.blocker || changes.claimIds.length || changes.nextAction}
+		{#if changes.blocker || changes.claimIds.length || changes.removedClaimCount || changes.nextAction || changes.stage || changes.keyCompleter || changes.participants || changes.externalClues}
 			<p class="update-note" aria-live="polite">
-				本次更新：{changes.blocker ? '阻塞点已变化；' : ''}{changes.claimIds.length
+				本次更新：{changes.stage ? '事项阶段已变化；' : ''}{changes.blocker
+					? '阻塞点已变化；'
+					: ''}{changes.claimIds.length
 					? `${changes.claimIds.length} 条判断已变化；`
-					: ''}{changes.nextAction ? '下一步行动已变化。' : ''}
+					: ''}{changes.removedClaimCount
+					? `${changes.removedClaimCount} 条旧判断已移除；`
+					: ''}{changes.keyCompleter ? '关键补全者已变化；' : ''}{changes.participants
+					? '参与者信息已变化；'
+					: ''}{changes.externalClues ? '外部线索已变化；' : ''}{changes.nextAction
+					? '下一步行动已变化。'
+					: ''}
 			</p>
 		{/if}
 	</section>

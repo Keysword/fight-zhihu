@@ -15,7 +15,30 @@ describe('board changes', () => {
 		expect(diffBoards(previous, next)).toEqual({
 			blocker: true,
 			claimIds: ['claim-eligibility'],
-			nextAction: true
+			removedClaimCount: 0,
+			nextAction: true,
+			stage: false,
+			keyCompleter: false,
+			participants: false,
+			externalClues: false
+		});
+	});
+
+	it('reports removed claims and structural board changes', () => {
+		const previous = structuredClone(dormDemoBoard);
+		const next = structuredClone(dormDemoBoard);
+		next.claims.pop();
+		next.participants.pop();
+		next.keyCompleter = null;
+		next.externalClues = [];
+		next.stage = 'resolved';
+		const result = diffBoards(previous, next);
+		expect(result).toMatchObject({
+			removedClaimCount: 1,
+			participants: true,
+			keyCompleter: true,
+			externalClues: true,
+			stage: true
 		});
 	});
 });
