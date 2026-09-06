@@ -96,7 +96,9 @@ export function createAgentRuntime(dependencies: RuntimeDependencies) {
 			if (!caseRecord) throw new Error(`找不到案例：${caseId}`);
 			if (!model) return useDemoFallback(caseId, new ModelConfigurationError());
 
-			const messages = buildAgentMessages(caseRecord, repository.listEvents(caseId));
+			const existingEvents = repository.listEvents(caseId);
+			const isDemo = existingEvents.some((event) => event.type === 'case.demo');
+			const messages = buildAgentMessages(caseRecord, existingEvents);
 			const gatheredClues: ExternalClue[] = [];
 			const requiresReview = Boolean(caseRecord.board);
 			let proposedBoard: import('$lib/domain/types').BackgroundBoard | undefined;
@@ -256,6 +258,9 @@ export function createAgentRuntime(dependencies: RuntimeDependencies) {
 								turns: turn,
 								revision: caseRecord.revision
 							};
+						}
+						if (requiresReview && isDemo) {
+							return useDemoFallback(caseId, new Error('演示更新需要形成可审阅的背景板'));
 						}
 						repository.appendEvent(caseId, {
 							type: 'agent.finished',

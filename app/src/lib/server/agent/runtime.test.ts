@@ -355,4 +355,40 @@ describe('stateful agent runtime', () => {
 		).rejects.toBeInstanceOf(ModelConfigurationError);
 		repo.close();
 	});
+
+	it('keeps the marked demo update reviewable when the model finishes without a patch', async () => {
+		const repo = repository();
+		const demo = repo.createCase({
+			title: '新人入住宿舍',
+			goal: '确认 8 月 2 日到达后是否可以实际入住',
+			confusion: '不知道是否已分房以及钥匙由谁交付'
+		});
+		for (const evidence of dormDemoEvidence)
+			repo.appendEvidence(demo.id, {
+				kind: evidence.kind,
+				content: evidence.content,
+				sourceLabel: evidence.sourceLabel,
+				occurredAt: evidence.occurredAt
+			});
+		repo.appendEvent(demo.id, { type: 'case.demo', payload: { fixture: 'dorm' } });
+		const zhihu = { searchZhihu: vi.fn(async () => []), searchGlobal: vi.fn(async () => []) };
+		await createAgentRuntime({ repository: repo, model: null, zhihu }).run(demo.id);
+		repo.appendEvidence(demo.id, {
+			kind: 'message',
+			content: '物业刚回复：房间已经分配，钥匙在前台领取。',
+			sourceLabel: '我的补充',
+			occurredAt: null
+		});
+		const model = scriptedModel(['{"type":"finish","summary":"无需更新"}']);
+		await expect(
+			createAgentRuntime({ repository: repo, model, zhihu }).run(demo.id)
+		).resolves.toMatchObject({
+			outcome: 'review_required',
+			proposedBoard: { stage: 'actionable' }
+		});
+		expect(repo.getCase(demo.id)?.pendingBoard?.keyCompleter?.participantId).toBe(
+			'participant-property'
+		);
+		repo.close();
+	});
 });
