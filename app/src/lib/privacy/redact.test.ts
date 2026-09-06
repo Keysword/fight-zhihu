@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { redactText } from './redact';
+import { parseRedactionReplacements, redactSearchQuery, redactText } from './redact';
 
 describe('redactText', () => {
 	it('redacts mainland phone numbers', () => {
@@ -27,5 +27,18 @@ describe('redactText', () => {
 		const result = redactText('请联系 13812345678 或 a@example.com，明天处理。');
 		expect(result.redacted).toBe('请联系 [手机号] 或 [邮箱]，明天处理。');
 		expect(result.findings.map((finding) => finding.type)).toEqual(['phone', 'email']);
+	});
+
+	it('parses user replacement lines and ignores malformed entries', () => {
+		expect(parseRedactionReplacements('甲公司 => [公司]\n内部计划=某项目\n没有分隔符')).toEqual([
+			{ from: '甲公司', to: '[公司]' },
+			{ from: '内部计划', to: '某项目' }
+		]);
+	});
+
+	it('redacts case-specific names and organizations from outbound search queries', () => {
+		expect(redactSearchQuery('甲公司 张老师 13812345678 入职权限', ['张老师'])).toBe(
+			'[单位] [联系人] [手机号] 入职权限'
+		);
 	});
 });

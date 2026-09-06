@@ -3,6 +3,7 @@ import { build, files, version } from '$service-worker';
 
 const worker = self as unknown as ServiceWorkerGlobalScope;
 const CACHE = `background-board-${version}`;
+const CACHE_PREFIX = 'background-board-';
 const ASSETS = [...build, ...files];
 
 worker.addEventListener('install', (event) => {
@@ -12,7 +13,11 @@ worker.addEventListener('install', (event) => {
 worker.addEventListener('activate', (event) => {
 	event.waitUntil(
 		caches.keys().then(async (keys) => {
-			await Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key)));
+			await Promise.all(
+				keys
+					.filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE)
+					.map((key) => caches.delete(key))
+			);
 			await worker.clients.claim();
 		})
 	);

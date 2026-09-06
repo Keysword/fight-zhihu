@@ -89,4 +89,25 @@ describe('case repository', () => {
 		);
 		repo.close();
 	});
+
+	it('stages a proposal without replacing the current board until confirmation', () => {
+		const repo = createCaseRepository(temporaryDatabasePath());
+		const created = repo.createCase({
+			title: '宿舍入住',
+			goal: '确认能否入住',
+			confusion: '没有房间信息'
+		});
+		const initial = boardFor(created.id, created.title);
+		repo.saveBoard(created.id, 0, initial);
+		const proposal = { ...initial, currentBlocker: '只差钥匙领取时间' };
+		const staged = repo.stageBoardProposal(created.id, 1, proposal);
+		expect(staged.revision).toBe(1);
+		expect(staged.board?.currentBlocker).toBe('缺少房间分配信息');
+		expect(staged.pendingBoard?.currentBlocker).toBe('只差钥匙领取时间');
+		const confirmed = repo.confirmBoardProposal(created.id, 1);
+		expect(confirmed.revision).toBe(2);
+		expect(confirmed.board?.currentBlocker).toBe('只差钥匙领取时间');
+		expect(confirmed.pendingBoard).toBeNull();
+		repo.close();
+	});
 });

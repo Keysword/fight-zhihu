@@ -17,6 +17,12 @@ const serviceCreateSchema = createCaseInputSchema.extend({
 const serviceEvidenceSchema = appendEvidenceInputSchema.extend({
 	replacements: z.array(replacementSchema).max(30).default([])
 });
+const proposalReviewSchema = z
+	.object({
+		action: z.enum(['confirm', 'discard']),
+		expectedRevision: z.number().int().nonnegative()
+	})
+	.strict();
 
 export interface AgentRunner {
 	run(caseId: string): Promise<AgentRunResult>;
@@ -54,17 +60,23 @@ export function createCaseService(dependencies: {
 		createCase(input: z.input<typeof serviceCreateSchema>) {
 			const parsed = serviceCreateSchema.parse(input);
 			const replacements = parsed.replacements as RedactionReplacement[];
-			const confusion = redactText(parsed.confusion, replacements);
+			let redactionCount = 0;
+			const redact = (text: string) => {
+				const result = redactText(text, replacements);
+				redactionCount += result.findings.length;
+				return result.redacted;
+			};
 			const caseRecord = repository.createCase({
-				title: parsed.title,
-				goal: parsed.goal,
-				confusion: confusion.redacted
+				title: redact(parsed.title),
+				goal: redact(parsed.goal),
+				confusion: redact(parsed.confusion)
 			});
-			let redactionCount = confusion.findings.length;
 			for (const inputEvidence of parsed.evidence) {
-				const content = redactText(inputEvidence.content, replacements);
-				redactionCount += content.findings.length;
-				repository.appendEvidence(caseRecord.id, { ...inputEvidence, content: content.redacted });
+				repository.appendEvidence(caseRecord.id, {
+					...inputEvidence,
+					content: redact(inputEvidence.content),
+					sourceLabel: redact(inputEvidence.sourceLabel)
+				});
 			}
 			repository.appendEvent(caseRecord.id, {
 				type: 'case.created',
@@ -129,6 +141,27 @@ export function createCaseService(dependencies: {
 
 		getCase: view,
 
+		reviewBoardProposal(caseId: string, input: z.input<typeof proposalReviewSchema>): CaseView {
+			const parsed = proposalReviewSchema.parse(input);
+			const current = requireCase(caseId);
+			if (parsed.action === 'confirm') {
+				if (!current.pendingBoard) throw new Error('当前没有待确认的背景板更新');
+				validateBoardForCase(current.pendingBoard, current, current.pendingBoard.externalClues);
+				repository.confirmBoardProposal(caseId, parsed.expectedRevision);
+				repository.appendEvent(caseId, {
+					type: 'board.proposal_confirmed',
+					payload: { revision: parsed.expectedRevision + 1 }
+				});
+			} else {
+				repository.discardBoardProposal(caseId, parsed.expectedRevision);
+				repository.appendEvent(caseId, {
+					type: 'board.proposal_discarded',
+					payload: { revision: parsed.expectedRevision }
+				});
+			}
+			return view(caseId);
+		},
+
 		async runCase(caseId: string): Promise<CaseView & { run: AgentRunResult }> {
 			requireCase(caseId);
 			const run = await runner.run(caseId);
@@ -142,10 +175,11 @@ export function createCaseService(dependencies: {
 			requireCase(caseId);
 			const parsed = serviceEvidenceSchema.parse(input);
 			const content = redactText(parsed.content, parsed.replacements);
+			const sourceLabel = redactText(parsed.sourceLabel, parsed.replacements);
 			const evidence = repository.appendEvidence(caseId, {
 				kind: parsed.kind,
 				content: content.redacted,
-				sourceLabel: parsed.sourceLabel,
+				sourceLabel: sourceLabel.redacted,
 				occurredAt: parsed.occurredAt
 			});
 			repository.appendEvent(caseId, {
@@ -153,11 +187,30 @@ export function createCaseService(dependencies: {
 				payload: {
 					evidenceId: evidence.id,
 					kind: evidence.kind,
-					redactionCount: content.findings.length
+					redactionCount: content.findings.length + sourceLabel.findings.length
 				}
 			});
-			const run = await runner.run(caseId);
-			return { ...view(caseId), run, redactionCount: content.findings.length };
+			let run: AgentRunResult;
+			try {
+				run = await runner.run(caseId);
+			} catch {
+				const current = requireCase(caseId);
+				repository.appendEvent(caseId, {
+					type: 'agent.run_failed',
+					payload: { summary: '证据已经保存，但 Agent 本轮暂时没有完成判断' }
+				});
+				run = {
+					outcome: 'failed',
+					summary: '证据已经保存，但 Agent 本轮暂时没有完成判断；可以稍后重新运行。',
+					turns: 0,
+					revision: current.revision
+				};
+			}
+			return {
+				...view(caseId),
+				run,
+				redactionCount: content.findings.length + sourceLabel.findings.length
+			};
 		},
 
 		health() {

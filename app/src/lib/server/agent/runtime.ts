@@ -1,4 +1,5 @@
 import type { ExternalClue } from '$lib/domain/types';
+import { redactSearchQuery } from '$lib/privacy/redact';
 import type { CaseRepository } from '$lib/server/cases/repository';
 import type { ZhihuClient } from '$lib/server/zhihu/client';
 import { buildDormDemoFallback } from './fallback';
@@ -20,9 +21,10 @@ export class AgentLimitError extends Error {
 }
 
 export interface AgentRunResult {
-	outcome: 'finished' | 'needs_input' | 'fallback';
+	outcome: 'finished' | 'needs_input' | 'fallback' | 'failed' | 'review_required';
 	summary: string;
 	question?: string;
+	proposedBoard?: import('$lib/domain/types').BackgroundBoard;
 	turns: number;
 	revision: number;
 }
@@ -61,6 +63,20 @@ export function createAgentRuntime(dependencies: RuntimeDependencies) {
 		const fallback = isDemo ? buildDormDemoFallback(caseRecord) : null;
 		if (!fallback) throw cause;
 		validateBoardForCase(fallback, caseRecord, fallback.externalClues);
+		if (caseRecord.board) {
+			repository.stageBoardProposal(caseId, caseRecord.revision, fallback);
+			repository.appendEvent(caseId, {
+				type: 'agent.fallback',
+				payload: { summary: '演示案例形成了一份待确认的已审核更新' }
+			});
+			return {
+				outcome: 'review_required',
+				summary: '演示案例形成了一份待确认的已审核更新',
+				proposedBoard: fallback,
+				turns: 0,
+				revision: caseRecord.revision
+			};
+		}
 		const saved = repository.saveBoard(caseId, caseRecord.revision, fallback);
 		repository.appendEvent(caseId, {
 			type: 'agent.fallback',
@@ -82,6 +98,8 @@ export function createAgentRuntime(dependencies: RuntimeDependencies) {
 
 			const messages = buildAgentMessages(caseRecord, repository.listEvents(caseId));
 			const gatheredClues: ExternalClue[] = [];
+			const requiresReview = Boolean(caseRecord.board);
+			let proposedBoard: import('$lib/domain/types').BackgroundBoard | undefined;
 			let searchCount = 0;
 			let protocolRepairUsed = false;
 
@@ -125,6 +143,13 @@ export function createAgentRuntime(dependencies: RuntimeDependencies) {
 					});
 					throw error;
 				}
+				if (action.type === 'search_zhihu' || action.type === 'search_global') {
+					const caseSpecificNames: string[] = [
+						...caseRecord.evidence.map((evidence) => evidence.sourceLabel),
+						...(caseRecord.board?.participants.map((participant) => participant.name) ?? [])
+					];
+					action = { ...action, query: redactSearchQuery(action.query, caseSpecificNames) };
+				}
 				repository.appendEvent(caseId, {
 					type: 'agent.action',
 					payload: actionEventPayload(action)
@@ -142,10 +167,22 @@ export function createAgentRuntime(dependencies: RuntimeDependencies) {
 							throw new AgentLimitError('单轮最多执行两次外部搜索');
 						}
 						searchCount += 1;
-						const clues =
-							action.type === 'search_zhihu'
-								? await zhihu.searchZhihu(action.query, action.count)
-								: await zhihu.searchGlobal(action.query, action.count);
+						let clues: ExternalClue[];
+						try {
+							clues =
+								action.type === 'search_zhihu'
+									? await zhihu.searchZhihu(action.query, action.count)
+									: await zhihu.searchGlobal(action.query, action.count);
+						} catch {
+							const payload = {
+								tool: action.type,
+								unavailable: true,
+								summary: '外部搜索暂时不可用，请继续基于案例证据判断'
+							};
+							repository.appendEvent(caseId, { type: 'tool.error', payload });
+							messages.push(toolMessage(payload));
+							break;
+						}
 						gatheredClues.push(...clues);
 						const payload = { tool: action.type, clues };
 						repository.appendEvent(caseId, { type: 'tool.result', payload });
@@ -155,8 +192,23 @@ export function createAgentRuntime(dependencies: RuntimeDependencies) {
 
 					case 'propose_board_patch': {
 						validateBoardForCase(action.board, caseRecord, gatheredClues);
-						caseRecord = repository.saveBoard(caseId, caseRecord.revision, action.board);
-						const payload = { tool: action.type, revision: caseRecord.revision, saved: true };
+						if (requiresReview) {
+							const staged = repository.stageBoardProposal(
+								caseId,
+								caseRecord.revision,
+								action.board
+							);
+							proposedBoard = staged.pendingBoard ?? action.board;
+							caseRecord = { ...staged, board: proposedBoard };
+						} else {
+							caseRecord = repository.saveBoard(caseId, caseRecord.revision, action.board);
+						}
+						const payload = {
+							tool: action.type,
+							revision: caseRecord.revision,
+							saved: !requiresReview,
+							pendingReview: requiresReview
+						};
 						repository.appendEvent(caseId, { type: 'tool.result', payload });
 						messages.push(toolMessage(payload));
 						break;
@@ -168,14 +220,43 @@ export function createAgentRuntime(dependencies: RuntimeDependencies) {
 							payload: { outcome: 'needs_input', question: action.question }
 						});
 						return {
-							outcome: 'needs_input',
-							summary: '需要补充一项关键信息',
+							outcome: proposedBoard ? 'review_required' : 'needs_input',
+							summary: proposedBoard
+								? '请先审阅本轮背景板变化，并补充一项关键信息'
+								: '需要补充一项关键信息',
 							question: action.question,
+							proposedBoard,
 							turns: turn,
 							revision: caseRecord.revision
 						};
 
 					case 'finish':
+						if (!caseRecord.board) {
+							repository.appendEvent(caseId, {
+								type: 'agent.invalid_finish',
+								payload: { summary: '背景板尚未形成，不能结束本轮判断' }
+							});
+							messages.push(
+								toolMessage({
+									error:
+										'当前还没有背景板。请先 propose_board_patch，或 ask_user 补充一个关键问题。'
+								})
+							);
+							break;
+						}
+						if (proposedBoard) {
+							repository.appendEvent(caseId, {
+								type: 'agent.finished',
+								payload: { outcome: 'review_required', summary: action.summary }
+							});
+							return {
+								outcome: 'review_required',
+								summary: action.summary,
+								proposedBoard,
+								turns: turn,
+								revision: caseRecord.revision
+							};
+						}
 						repository.appendEvent(caseId, {
 							type: 'agent.finished',
 							payload: { outcome: 'finished', summary: action.summary }

@@ -1,16 +1,33 @@
 <script lang="ts">
 	import { base, resolve } from '$app/paths';
 	import { goto } from '$app/navigation';
-	import { redactText } from '$lib/privacy/redact';
+	import { parseRedactionReplacements, redactText } from '$lib/privacy/redact';
 	let title = $state('');
 	let goal = $state('');
 	let confusion = $state('');
 	let evidence = $state('');
 	let sourceLabel = $state('同事 / 通知');
+	let replacementText = $state('');
 	let confirmed = $state(false);
 	let loading = $state(false);
 	let failure = $state('');
-	let preview = $derived(redactText([confusion, evidence].filter(Boolean).join('\n\n')).redacted);
+	const replacementPlaceholder = '每行一项，例如：\n甲公司 => [单位]\n张老师 => 人力老师';
+	let replacements = $derived(parseRedactionReplacements(replacementText).slice(0, 30));
+	let preview = $derived(
+		[
+			`标题：${redactText(title, replacements).redacted}`,
+			`目标：${redactText(goal, replacements).redacted}`,
+			`困惑：${redactText(confusion, replacements).redacted}`,
+			...(evidence
+				? [
+						`来源：${redactText(sourceLabel, replacements).redacted}`,
+						`证据：${redactText(evidence, replacements).redacted}`
+					]
+				: [])
+		]
+			.filter((line) => !line.endsWith('：'))
+			.join('\n\n')
+	);
 	async function createCase() {
 		if (!confirmed) return;
 		loading = true;
@@ -24,6 +41,7 @@
 					title,
 					goal,
 					confusion,
+					replacements,
 					evidence: evidence.trim()
 						? [{ kind: 'message', content: evidence, sourceLabel, occurredAt: null }]
 						: []
@@ -97,6 +115,14 @@
 				bind:value={evidence}
 				maxlength="30000"
 				placeholder="粘贴聊天、邮件或通知正文。手机号、邮箱和身份证号会自动替换。"></textarea>
+		</div>
+		<div class="field">
+			<label for="replacements">还有哪些姓名、单位或内部项目需要替换？（可选）</label><textarea
+				id="replacements"
+				bind:value={replacementText}
+				maxlength="2000"
+				placeholder={replacementPlaceholder}></textarea>
+			<small>自动规则无法可靠识别人名和公司名。这里的替换会同时用于预览和服务端存储。</small>
 		</div>
 		{#if preview}<div>
 				<strong>发送前预览</strong>

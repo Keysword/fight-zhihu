@@ -18,6 +18,14 @@ export interface RedactionResult {
 	findings: RedactionFinding[];
 }
 
+export function parseRedactionReplacements(input: string): RedactionReplacement[] {
+	return input
+		.split(/\r?\n/)
+		.map((line) => line.match(/^\s*(.+?)\s*(?:=>|=)\s*(.+?)\s*$/))
+		.filter((match): match is RegExpMatchArray => Boolean(match))
+		.map((match) => ({ from: match[1], to: match[2] }));
+}
+
 const RULES: Array<{ type: RedactionType; pattern: RegExp; replacement: string }> = [
 	{
 		type: 'identity',
@@ -74,4 +82,21 @@ export function redactText(
 	}
 
 	return { redacted, findings };
+}
+
+export function redactSearchQuery(query: string, caseSpecificNames: string[] = []): string {
+	let redacted = redactText(query).redacted;
+	for (const name of [...new Set(caseSpecificNames)].sort(
+		(left, right) => right.length - left.length
+	)) {
+		if (name.trim().length < 2) continue;
+		const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+		redacted = redacted.replace(new RegExp(escaped, 'g'), '[联系人]');
+	}
+	redacted = redacted.replace(
+		/[\p{Script=Han}A-Za-z0-9]{1,20}(?:公司|集团|研究所|实验室|大学|学院|项目组)/gu,
+		'[单位]'
+	);
+	redacted = redacted.replace(/[\p{Script=Han}]{1,4}(?:老师|经理|主任|主管|总监)/gu, '[联系人]');
+	return redacted.replace(/\s+/g, ' ').trim();
 }

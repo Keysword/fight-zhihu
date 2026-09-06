@@ -150,19 +150,66 @@ describe('stateful agent runtime', () => {
 		const created = repo.createCase({ title: '事项', goal: '解决', confusion: '不清楚' });
 		const model = scriptedModel([
 			'我先分析一下这个问题。',
-			'{"type":"finish","summary":"目前需要用户补充证据"}'
+			'{"type":"ask_user","question":"请补充正式通知原文。"}'
 		]);
 		const zhihu = { searchZhihu: vi.fn(async () => []), searchGlobal: vi.fn(async () => []) };
 
 		await expect(
 			createAgentRuntime({ repository: repo, model, zhihu }).run(created.id)
 		).resolves.toMatchObject({
-			outcome: 'finished',
+			outcome: 'needs_input',
 			turns: 2
 		});
 		const events = repo.listEvents(created.id);
 		expect(events.some((event) => event.type === 'agent.protocol_repair')).toBe(true);
 		expect(JSON.stringify(events)).not.toContain('我先分析一下');
+		repo.close();
+	});
+
+	it('does not allow finish before a board exists', async () => {
+		const repo = repository();
+		const created = repo.createCase({ title: '事项', goal: '解决', confusion: '不清楚' });
+		const model = scriptedModel([
+			'{"type":"finish","summary":"已经完成"}',
+			'{"type":"ask_user","question":"请补充一条通知。"}'
+		]);
+		const zhihu = { searchZhihu: vi.fn(async () => []), searchGlobal: vi.fn(async () => []) };
+		await expect(
+			createAgentRuntime({ repository: repo, model, zhihu }).run(created.id)
+		).resolves.toMatchObject({ outcome: 'needs_input', question: '请补充一条通知。' });
+		expect(repo.listEvents(created.id).some((event) => event.type === 'agent.invalid_finish')).toBe(
+			true
+		);
+		repo.close();
+	});
+
+	it('redacts outbound search queries and continues when Zhihu is unavailable', async () => {
+		const repo = repository();
+		const created = repo.createCase({ title: '权限', goal: '开通权限', confusion: '不知道找谁' });
+		const evidence = repo.appendEvidence(created.id, {
+			kind: 'message',
+			content: '张老师说需要再问管理员，电话 13812345678',
+			sourceLabel: '张老师',
+			occurredAt: null
+		});
+		const board = validBoard(created.id, evidence.id);
+		board.title = created.title;
+		board.goal = created.goal;
+		const model = scriptedModel([
+			'{"type":"search_zhihu","query":"甲公司 张老师 13812345678 入职权限","count":1}',
+			JSON.stringify({ type: 'propose_board_patch', board, summary: '整理现有信息' }),
+			'{"type":"finish","summary":"形成背景板"}'
+		]);
+		const zhihu = {
+			searchZhihu: vi.fn(async () => Promise.reject(new Error('quota'))),
+			searchGlobal: vi.fn(async () => [])
+		};
+		await expect(
+			createAgentRuntime({ repository: repo, model, zhihu }).run(created.id)
+		).resolves.toMatchObject({ outcome: 'finished' });
+		expect(zhihu.searchZhihu).toHaveBeenCalledWith('[单位] [联系人] [手机号] 入职权限', 1);
+		expect(repo.getCase(created.id)?.board).not.toBeNull();
+		expect(repo.listEvents(created.id).some((event) => event.type === 'tool.error')).toBe(true);
 		repo.close();
 	});
 
@@ -212,6 +259,39 @@ describe('stateful agent runtime', () => {
 		).rejects.toBeInstanceOf(RevisionConflictError);
 		expect(baseRepo.getCase(created.id)?.board).toBeNull();
 		baseRepo.close();
+	});
+
+	it('stages updates to an existing board for user review', async () => {
+		const repo = repository();
+		const created = repo.createCase({
+			title: '宿舍入住',
+			goal: '确认能否入住',
+			confusion: '不清楚'
+		});
+		const evidence = repo.appendEvidence(created.id, {
+			kind: 'message',
+			content: '人力说以邮件为准',
+			sourceLabel: '人力',
+			occurredAt: null
+		});
+		const initial = validBoard(created.id, evidence.id);
+		repo.saveBoard(created.id, 0, initial);
+		const proposal = { ...structuredClone(initial), currentBlocker: '等待正式邮件到达' };
+		const model = scriptedModel([
+			JSON.stringify({ type: 'propose_board_patch', board: proposal, summary: '更新阻塞点' }),
+			'{"type":"finish","summary":"请用户审阅变化"}'
+		]);
+		const zhihu = { searchZhihu: vi.fn(async () => []), searchGlobal: vi.fn(async () => []) };
+		await expect(
+			createAgentRuntime({ repository: repo, model, zhihu }).run(created.id)
+		).resolves.toMatchObject({
+			outcome: 'review_required',
+			revision: 1,
+			proposedBoard: { currentBlocker: '等待正式邮件到达' }
+		});
+		expect(repo.getCase(created.id)?.board?.currentBlocker).toBe('房间号尚未确认');
+		expect(repo.getCase(created.id)?.pendingBoard?.currentBlocker).toBe('等待正式邮件到达');
+		repo.close();
 	});
 
 	it('stops after six autonomous decisions', async () => {

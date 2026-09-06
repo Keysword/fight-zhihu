@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { backgroundBoardSchema, claimSchema, keyCompleterSchema } from './schemas';
+import {
+	backgroundBoardSchema,
+	claimSchema,
+	externalClueSchema,
+	keyCompleterSchema
+} from './schemas';
 
 describe('claimSchema', () => {
 	it('requires evidence for confirmed facts', () => {
@@ -58,6 +63,23 @@ describe('backgroundBoardSchema', () => {
 				externalClues: [],
 				updatedAt: '2026-09-05T00:00:00.000Z',
 				invented: true
+			})
+		).toThrow();
+	});
+
+	it('accepts only HTTP(S) external clue links', () => {
+		expect(() =>
+			externalClueSchema.parse({
+				id: 'clue-1',
+				title: '危险链接',
+				excerpt: '',
+				url: 'javascript:alert(1)',
+				author: '',
+				editedAt: null,
+				authorityLevel: null,
+				source: 'global',
+				relevance: '',
+				warning: '待核实'
 			})
 		).toThrow();
 	});

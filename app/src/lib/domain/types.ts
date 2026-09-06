@@ -93,6 +93,7 @@ export interface CaseSummary {
 
 export interface CaseRecord extends CaseSummary {
 	board: BackgroundBoard | null;
+	pendingBoard?: BackgroundBoard | null;
 	evidence: Evidence[];
 }
 

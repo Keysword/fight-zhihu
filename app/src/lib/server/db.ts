@@ -17,6 +17,8 @@ export function openDatabase(path: string): DatabaseSync {
 			stage TEXT NOT NULL,
 			revision INTEGER NOT NULL DEFAULT 0,
 			board_json TEXT,
+			pending_board_json TEXT,
+			pending_revision INTEGER,
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL
 		);
@@ -46,5 +48,14 @@ export function openDatabase(path: string): DatabaseSync {
 		CREATE INDEX IF NOT EXISTS events_case_sequence
 			ON events(case_id, sequence);
 	`);
+	const caseColumns = database.prepare('PRAGMA table_info(cases)').all() as unknown as Array<{
+		name: string;
+	}>;
+	if (!caseColumns.some((column) => column.name === 'pending_board_json')) {
+		database.exec('ALTER TABLE cases ADD COLUMN pending_board_json TEXT');
+	}
+	if (!caseColumns.some((column) => column.name === 'pending_revision')) {
+		database.exec('ALTER TABLE cases ADD COLUMN pending_revision INTEGER');
+	}
 	return database;
 }

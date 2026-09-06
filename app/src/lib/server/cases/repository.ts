@@ -31,6 +31,8 @@ interface CaseRow {
 	stage: CaseStage;
 	revision: number;
 	board_json: string | null;
+	pending_board_json: string | null;
+	pending_revision: number | null;
 	created_at: string;
 	updated_at: string;
 }
@@ -94,6 +96,9 @@ export interface CaseRepository {
 	getCase(caseId: string): CaseRecord | null;
 	appendEvidence(caseId: string, input: z.input<typeof newEvidenceSchema>): Evidence;
 	saveBoard(caseId: string, expectedRevision: number, board: BackgroundBoard): CaseRecord;
+	stageBoardProposal(caseId: string, expectedRevision: number, board: BackgroundBoard): CaseRecord;
+	confirmBoardProposal(caseId: string, expectedRevision: number): CaseRecord;
+	discardBoardProposal(caseId: string, expectedRevision: number): CaseRecord;
 	appendEvent(
 		caseId: string,
 		event: { type: string; payload: Record<string, unknown> }
@@ -125,6 +130,9 @@ export function createCaseRepository(path: string): CaseRepository {
 		return {
 			...summaryFromRow(row),
 			board: row.board_json ? backgroundBoardSchema.parse(JSON.parse(row.board_json)) : null,
+			pendingBoard: row.pending_board_json
+				? backgroundBoardSchema.parse(JSON.parse(row.pending_board_json))
+				: null,
 			evidence: getEvidence(row.id)
 		};
 	}
@@ -190,7 +198,7 @@ export function createCaseRepository(path: string): CaseRepository {
 			const now = new Date().toISOString();
 			const result = database
 				.prepare(
-					'UPDATE cases SET board_json = ?, stage = ?, revision = revision + 1, updated_at = ? WHERE id = ? AND revision = ?'
+					'UPDATE cases SET board_json = ?, pending_board_json = NULL, pending_revision = NULL, stage = ?, revision = revision + 1, updated_at = ? WHERE id = ? AND revision = ?'
 				)
 				.run(
 					JSON.stringify({ ...board, updatedAt: now }),
@@ -199,6 +207,68 @@ export function createCaseRepository(path: string): CaseRepository {
 					caseId,
 					expectedRevision
 				);
+			if (Number(result.changes) !== 1) {
+				if (!this.getCase(caseId)) throw new CaseNotFoundError(caseId);
+				throw new RevisionConflictError();
+			}
+			return recordFromRow(requireCase(caseId));
+		},
+
+		stageBoardProposal(caseId, expectedRevision, inputBoard) {
+			const board = backgroundBoardSchema.parse(inputBoard);
+			if (board.caseId !== caseId) throw new Error('背景板与案例不一致');
+			const now = new Date().toISOString();
+			const result = database
+				.prepare(
+					'UPDATE cases SET pending_board_json = ?, pending_revision = ?, updated_at = ? WHERE id = ? AND revision = ?'
+				)
+				.run(
+					JSON.stringify({ ...board, updatedAt: now }),
+					expectedRevision,
+					now,
+					caseId,
+					expectedRevision
+				);
+			if (Number(result.changes) !== 1) {
+				if (!this.getCase(caseId)) throw new CaseNotFoundError(caseId);
+				throw new RevisionConflictError();
+			}
+			return recordFromRow(requireCase(caseId));
+		},
+
+		confirmBoardProposal(caseId, expectedRevision) {
+			const row = requireCase(caseId);
+			if (
+				row.revision !== expectedRevision ||
+				row.pending_revision !== expectedRevision ||
+				!row.pending_board_json
+			) {
+				throw new RevisionConflictError();
+			}
+			const board = backgroundBoardSchema.parse(JSON.parse(row.pending_board_json));
+			const now = new Date().toISOString();
+			const result = database
+				.prepare(
+					'UPDATE cases SET board_json = ?, pending_board_json = NULL, pending_revision = NULL, stage = ?, revision = revision + 1, updated_at = ? WHERE id = ? AND revision = ? AND pending_revision = ?'
+				)
+				.run(
+					JSON.stringify({ ...board, updatedAt: now }),
+					board.stage,
+					now,
+					caseId,
+					expectedRevision,
+					expectedRevision
+				);
+			if (Number(result.changes) !== 1) throw new RevisionConflictError();
+			return recordFromRow(requireCase(caseId));
+		},
+
+		discardBoardProposal(caseId, expectedRevision) {
+			const result = database
+				.prepare(
+					'UPDATE cases SET pending_board_json = NULL, pending_revision = NULL WHERE id = ? AND revision = ? AND pending_revision = ?'
+				)
+				.run(caseId, expectedRevision, expectedRevision);
 			if (Number(result.changes) !== 1) {
 				if (!this.getCase(caseId)) throw new CaseNotFoundError(caseId);
 				throw new RevisionConflictError();

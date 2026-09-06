@@ -7,7 +7,11 @@
 		if (event.type === 'case.created') return '建立案例背景板';
 		if (event.type === 'evidence.added') return '收到一条新证据';
 		if (event.type === 'agent.fallback') return String(payload.summary ?? '载入审核结果');
+		if (event.type === 'agent.finished' && payload.outcome === 'needs_input')
+			return `需要你补充：${String(payload.question ?? '一项关键信息')}`;
 		if (event.type === 'agent.finished') return String(payload.summary ?? '本轮判断结束');
+		if (event.type === 'agent.run_failed') return String(payload.summary ?? '本轮判断暂时失败');
+		if (event.type === 'tool.error') return String(payload.summary ?? '外部工具暂时不可用');
 		if (event.type === 'agent.action') {
 			const action = String(payload.action ?? '判断');
 			return (

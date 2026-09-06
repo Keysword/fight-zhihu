@@ -525,6 +525,26 @@ h1,
 	color: var(--muted);
 	font-size: 13px;
 }
+.claim-evidence {
+	margin-top: 12px;
+	padding-top: 10px;
+	border-top: 1px dashed var(--rule);
+	font-size: 13px;
+}
+.claim-evidence summary {
+	color: var(--blue);
+	cursor: pointer;
+	font-weight: 700;
+}
+.claim-evidence blockquote {
+	margin: 10px 0 0;
+	padding: 10px 12px;
+	background: rgba(255, 255, 255, 0.64);
+	border-left: 3px solid var(--blue);
+}
+.claim-evidence blockquote p {
+	margin-top: 4px;
+}
 .participant-list {
 	display: grid;
 	grid-template-columns: repeat(2, 1fr);
@@ -594,6 +614,14 @@ h1,
 	line-height: 1.75;
 	white-space: pre-wrap;
 }
+.editable-message {
+	display: block;
+	width: 100%;
+	min-height: 190px;
+	color: inherit;
+	font: inherit;
+	resize: vertical;
+}
 .branch-list {
 	margin: 16px 0;
 	padding-left: 19px;
@@ -627,6 +655,16 @@ h1,
 	font-size: 13px;
 	line-height: 1.6;
 }
+.clue .clue-meta {
+	font-size: 12px;
+}
+.stale-clue {
+	display: block;
+	margin-top: 6px;
+	color: var(--amber);
+	font-size: 12px;
+	font-weight: 700;
+}
 .activity-list {
 	margin: 0;
 	padding: 0;
@@ -651,6 +689,43 @@ h1,
 	border: 1px solid var(--rule);
 	resize: vertical;
 }
+.composer-row {
+	display: grid;
+	grid-template-columns: 1fr 180px;
+	gap: 12px;
+}
+.composer-row label {
+	display: grid;
+	gap: 6px;
+	font-size: 12px;
+	font-weight: 700;
+}
+.composer input,
+.composer select {
+	width: 100%;
+	min-height: 42px;
+	padding: 8px 10px;
+	border: 1px solid var(--rule);
+	background: white;
+}
+.composer .replacement-input {
+	min-height: 58px;
+	margin-top: 0;
+}
+.compact-preview {
+	margin: 2px 0 12px;
+	font-size: 13px;
+}
+.confirmation-line {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 12px;
+}
+.confirmation-line input {
+	width: auto;
+	min-height: auto;
+}
 .update-note {
 	margin: 16px 0 0;
 	padding: 12px 14px;
@@ -658,6 +733,30 @@ h1,
 	background: var(--blue-soft);
 	font-size: 13px;
 	font-weight: 700;
+}
+.review-proposal {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 24px;
+	margin: 10px 0 24px;
+	padding: 22px 24px;
+	background: #fff8e7;
+	border: 2px solid var(--amber);
+}
+.review-proposal h2 {
+	margin: 7px 0;
+	font-size: 20px;
+}
+.review-proposal p {
+	margin: 0;
+	color: var(--muted);
+	font-size: 13px;
+}
+.review-actions {
+	display: flex;
+	flex-shrink: 0;
+	gap: 10px;
 }
 .changed {
 	animation: board-change 5s ease-out;
@@ -743,6 +842,14 @@ h1,
 	}
 	.hero-actions .button {
 		width: 100%;
+	}
+	.review-proposal,
+	.review-actions {
+		align-items: stretch;
+		flex-direction: column;
+	}
+	.composer-row {
+		grid-template-columns: 1fr;
 	}
 }
 

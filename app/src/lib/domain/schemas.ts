@@ -101,7 +101,10 @@ export const externalClueSchema = z
 		id: z.string().min(1),
 		title: z.string().trim().min(1),
 		excerpt: z.string(),
-		url: z.string().url(),
+		url: z
+			.string()
+			.url()
+			.refine((value) => /^https?:\/\//i.test(value), '外部线索只允许 HTTP(S) 链接'),
 		author: z.string(),
 		editedAt: z.string().datetime().nullable(),
 		authorityLevel: z.string().nullable(),

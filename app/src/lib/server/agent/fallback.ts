@@ -23,15 +23,25 @@ export function buildDormDemoFallback(caseRecord: CaseRecord): BackgroundBoard |
 		participant.evidenceIds = mapIds(participant.evidenceIds);
 	if (board.keyCompleter) board.keyCompleter.evidenceIds = mapIds(board.keyCompleter.evidenceIds);
 
-	const propertyReply = caseRecord.evidence.find(
-		(evidence) =>
-			!dormDemoEvidence.some(
-				(fixture) =>
-					fixture.sourceLabel === evidence.sourceLabel && fixture.content === evidence.content
-			) &&
-			/房间.{0,8}(?:已经|已)?分配/.test(evidence.content) &&
+	const propertyReply = caseRecord.evidence.find((evidence) => {
+		const fixture = dormDemoEvidence.some(
+			(item) => item.sourceLabel === evidence.sourceLabel && item.content === evidence.content
+		);
+		const attributedToProperty =
+			/物业|宿舍前台/.test(evidence.sourceLabel) ||
+			/物业.{0,8}(?:回复|确认|通知|表示)/.test(evidence.content);
+		const negated =
+			/(?:尚未|未能|没有|不清楚|不知道|无法).{0,18}(?:房间|钥匙)|(?:房间|钥匙).{0,18}(?:尚未|未能|没有|不清楚|不知道|无法)/.test(
+				evidence.content
+			);
+		return (
+			!fixture &&
+			attributedToProperty &&
+			!negated &&
+			/房间.{0,8}(?:已经|已|完成)?分配/.test(evidence.content) &&
 			/钥匙.{0,10}(?:前台|领取|交付)/.test(evidence.content)
-	);
+		);
+	});
 	if (propertyReply) applyPropertyReply(board, propertyReply.id);
 	return board;
 }

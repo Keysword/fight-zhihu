@@ -60,4 +60,30 @@ describe('dorm demo fallback', () => {
 		});
 		repository.close();
 	});
+
+	it('does not treat a negated or unattributed follow-up as property confirmation', () => {
+		const directory = mkdtempSync(join(tmpdir(), 'background-fallback-'));
+		directories.push(directory);
+		const repository = createCaseRepository(join(directory, 'fallback.sqlite'));
+		const created = repository.createCase({
+			title: '新人入住宿舍',
+			goal: '确认 8 月 2 日到达后是否可以实际入住',
+			confusion: '缺少房间和钥匙信息'
+		});
+		for (const evidence of dormDemoEvidence)
+			repository.appendEvidence(created.id, {
+				kind: evidence.kind,
+				content: evidence.content,
+				sourceLabel: evidence.sourceLabel,
+				occurredAt: evidence.occurredAt
+			});
+		repository.appendEvidence(created.id, {
+			kind: 'message',
+			content: '尚未确认房间已经分配，钥匙由谁领取也不知道。',
+			sourceLabel: '我的补充',
+			occurredAt: null
+		});
+		expect(buildDormDemoFallback(repository.getCase(created.id)!)?.stage).toBe('waiting');
+		repository.close();
+	});
 });
