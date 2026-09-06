@@ -37,7 +37,7 @@ install -o root -g root -m 0644 /tmp/background-board.service.new /etc/systemd/s
 install -o root -g root -m 0644 /tmp/background-board-nginx.conf.new /etc/nginx/snippets/background-board.conf
 rm -f /tmp/background-board.service.new /tmp/background-board-nginx.conf.new
 systemctl daemon-reload
-if ! nginx -T 2>/dev/null | grep -Fq 'location /background-board/'; then
+if ! nginx -T 2>/dev/null | grep -F 'location /background-board/' >/dev/null; then
     echo 'Nginx snippet is installed but not included by an active TLS server; follow deploy/README.md.' >&2
     exit 1
 fi
