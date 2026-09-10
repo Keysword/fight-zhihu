@@ -52,6 +52,11 @@ rm -f /tmp/background-board-release.tar.gz
 cd "$RELEASE_PATH"
 corepack pnpm install --prod --frozen-lockfile --ignore-scripts
 chown -R background-board:background-board "$RELEASE_PATH"
+# 让 /api/health 反映真实发布版本，而不是 .env 里写死的常量。
+sed -i '/^APP_VERSION=/d' /etc/background-board.env
+printf 'APP_VERSION=%s\n' "${RELEASE_PATH##*/}" >> /etc/background-board.env
+chown root:root /etc/background-board.env
+chmod 0600 /etc/background-board.env
 ln -sfn "$RELEASE_PATH" /srv/background-board/current.next
 if [ -L /srv/background-board/current ]; then
     readlink -f /srv/background-board/current > /srv/background-board/previous-release

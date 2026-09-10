@@ -272,7 +272,9 @@ export function createAgentRuntime(dependencies: RuntimeDependencies) {
 									error: '背景板没有通过安全校验',
 									reason,
 									instruction:
-										'请只修正被指出的问题，其余字段保持原样，然后重新输出一个完整的 propose_board_patch 动作 JSON。'
+										'请只修正被指出的问题，其余字段保持原样，然后重新输出一个完整的 propose_board_patch 动作 JSON。' +
+										'如果某条判断缺少证据支撑，可以把它从 fact 降级为 statement 或 inference；' +
+										'如果只有用户才能确认某项证据已经获得负责方明确回复，可以用 ask_user 询问用户。'
 								})
 							);
 							// 修复回合不占用本轮的决策预算。
