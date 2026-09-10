@@ -53,6 +53,18 @@ describe('agent protocol', () => {
 		expect(() => parseAgentAction('{"type":"finish","summary":"没有闭合"')).toThrow(/没有闭合/);
 	});
 
+	// “不符合协议”本身无法定位问题，失败时必须带出具体字段。
+	it('names the offending field when an action fails the schema', () => {
+		let message = '';
+		try {
+			parseAgentAction('{"type":"search_zhihu","query":"新人入住","count":50}');
+		} catch (error) {
+			message = error instanceof Error ? error.message : '';
+		}
+		expect(message).toContain('不符合协议');
+		expect(message).toContain('count');
+	});
+
 	it('rejects unsupported facts and unexplained key completers', () => {
 		const invalidBoard = {
 			caseId: 'case-1',

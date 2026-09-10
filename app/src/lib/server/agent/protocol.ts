@@ -102,7 +102,13 @@ export function parseAgentAction(response: string): AgentAction {
 
 	const result = agentActionSchema.safeParse(value);
 	if (!result.success) {
-		throw new AgentProtocolError('模型动作不符合协议', result.error);
+		// 只说“不符合协议”无法定位问题：这里把出错的字段路径带出来，
+		// 它会进入 agent.error 事件和用户可见的失败说明。
+		const detail = result.error.issues
+			.slice(0, 3)
+			.map((issue) => `${issue.path.join('.') || '(根)'}: ${issue.message}`)
+			.join('；');
+		throw new AgentProtocolError(`模型动作不符合协议：${detail}`, result.error);
 	}
 	return result.data;
 }
