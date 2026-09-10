@@ -5,7 +5,11 @@ import { AgentLimitError, runErrorDetail } from '$lib/server/agent/runtime';
 import { AgentProtocolError } from '$lib/server/agent/protocol';
 import { AgentSafetyError } from '$lib/server/agent/tools';
 import { ModelClientError, ModelConfigurationError } from '$lib/server/agent/model-client';
-import { CaseNotFoundError, RevisionConflictError } from '$lib/server/cases/repository';
+import {
+	CaseNotFoundError,
+	EvidenceNotFoundError,
+	RevisionConflictError
+} from '$lib/server/cases/repository';
 import { ZhihuApiError, ZhihuRateLimitError } from '$lib/server/zhihu/client';
 import { RateLimitExceededError } from '$lib/server/rate-limit';
 
@@ -40,9 +44,9 @@ export function apiError(error: unknown): Response {
 		code = 'INVALID_REQUEST';
 		message =
 			error instanceof z.ZodError ? error.issues[0]?.message || '输入不完整' : error.message;
-	} else if (error instanceof CaseNotFoundError) {
+	} else if (error instanceof CaseNotFoundError || error instanceof EvidenceNotFoundError) {
 		status = 404;
-		code = 'CASE_NOT_FOUND';
+		code = error instanceof EvidenceNotFoundError ? 'EVIDENCE_NOT_FOUND' : 'CASE_NOT_FOUND';
 		message = error.message;
 	} else if (error instanceof RevisionConflictError) {
 		status = 409;

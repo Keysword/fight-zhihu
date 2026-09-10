@@ -60,26 +60,68 @@ function assertNoUnsupportedNegation(claimText: string, confirmed: Evidence[]): 
 	}
 }
 
-function assertFactSupport(claim: BackgroundBoard['claims'][number], caseRecord: CaseRecord): void {
-	if (claim.kind !== 'fact') return;
+/** 返回一条 fact 无法成立的原因；成立时返回 null。安全校验与自动降级共用这一套判定。 */
+function factSupportProblem(
+	claim: BackgroundBoard['claims'][number],
+	caseRecord: CaseRecord
+): string | null {
+	if (claim.kind !== 'fact') return null;
 	const cited = caseRecord.evidence.filter((evidence) => claim.evidenceIds.includes(evidence.id));
 	const confirmed = cited.filter(isConfirmedEvidence);
 	if (confirmed.length === 0) {
-		throw new AgentSafetyError(
-			`已确认事实“${claim.text}”必须引用正式通知，或引用用户标记为已确认的证据`
-		);
+		return `已确认事实“${claim.text}”必须引用正式通知，或引用用户标记为已确认的证据`;
 	}
 	// 只靠零散片段重合不够：结论中出现证据没有的否定/转折时必须拒绝。
-	assertNoUnsupportedNegation(claim.text, confirmed);
+	try {
+		assertNoUnsupportedNegation(claim.text, confirmed);
+	} catch (error) {
+		return error instanceof Error ? error.message : String(error);
+	}
 	// 结论必须作为证据原文中的一段连续文字出现，而不是拼凑出的新句子。
 	const claimTokens = compact(claim.text);
 	const supported = confirmed.some(
 		(evidence) => claimTokens.length >= 2 && compact(evidence.content).includes(claimTokens)
 	);
-	if (!supported)
-		throw new AgentSafetyError(
-			`正式通知或已确认证据没有包含完整的“${claim.text}”，不能作为已确认事实`
-		);
+	if (!supported) {
+		return `正式通知或已确认证据没有包含完整的“${claim.text}”，不能作为已确认事实`;
+	}
+	return null;
+}
+
+function assertFactSupport(claim: BackgroundBoard['claims'][number], caseRecord: CaseRecord): void {
+	const problem = factSupportProblem(claim, caseRecord);
+	if (problem) throw new AgentSafetyError(problem);
+}
+
+export interface FactDowngrade {
+	id: string;
+	text: string;
+	reason: string;
+}
+
+/**
+ * 把没有充分证据支撑的 fact 降级为 statement。
+ *
+ * 模型经常把“信息已经确认”写成 fact，但只有正式通知或用户显式确认过的证据能
+ * 支撑 fact。与其让整轮判断失败，不如保留这条信息、按“他人说法”记录，等用户
+ * 在板上确认相关证据后再升级为事实。
+ */
+export function downgradeUnsupportedFacts(
+	board: BackgroundBoard,
+	caseRecord: CaseRecord
+): { board: BackgroundBoard; downgrades: FactDowngrade[] } {
+	const downgrades: FactDowngrade[] = [];
+	const claims = board.claims.map((claim) => {
+		const problem = factSupportProblem(claim, caseRecord);
+		if (!problem) return claim;
+		downgrades.push({ id: claim.id, text: claim.text, reason: problem });
+		return {
+			...claim,
+			kind: 'statement' as const,
+			rationale: '缺少正式确认，暂按他人说法记录；用户确认相关证据后可升级为已确认事实。'
+		};
+	});
+	return { board: { ...board, claims }, downgrades };
 }
 
 function assertNoIntentLanguage(board: BackgroundBoard): void {

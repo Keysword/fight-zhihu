@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { dormDemoBoard, dormDemoEvidence } from '$lib/domain/demo-case';
 import type { BackgroundBoard, CaseRecord, ExternalClue } from '$lib/domain/types';
-import { AgentSafetyError, validateBoardForCase } from './tools';
+import { AgentSafetyError, downgradeUnsupportedFacts, validateBoardForCase } from './tools';
 
 function record(board: BackgroundBoard | null = null): CaseRecord {
 	return {
@@ -122,5 +122,53 @@ describe('board safety validation', () => {
 		proposed.participants[0].providedInfo = ['可以协调接引'];
 		proposed.nextAction!.message = '请解释你为什么推卸责任。';
 		expect(() => validateBoardForCase(proposed, record(), [])).toThrow(/动机归因/);
+	});
+});
+
+describe('fact downgrade fallback', () => {
+	// 模型改不动时产品要兜底：保留信息，但不冒充已确认事实。
+	it('rewrites an unsupported fact as a statement instead of failing the run', () => {
+		const caseRecord = record();
+		const proposed = board();
+		proposed.claims[0] = {
+			id: 'claim-fact',
+			kind: 'fact',
+			text: '同事说以邮件为准',
+			evidenceIds: ['evidence-contact']
+		};
+		expect(() => validateBoardForCase(proposed, caseRecord, [])).toThrow(AgentSafetyError);
+
+		const { board: downgraded, downgrades } = downgradeUnsupportedFacts(proposed, caseRecord);
+
+		expect(downgrades).toHaveLength(1);
+		expect(downgrades[0].id).toBe('claim-fact');
+		expect(downgrades[0].reason).toContain('必须引用正式通知');
+		expect(downgraded.claims[0].kind).toBe('statement');
+		// 信息本身必须保留，只降级它的确定性。
+		expect(downgraded.claims[0].text).toBe('同事说以邮件为准');
+		expect(downgraded.claims[0].rationale).toContain('暂按他人说法记录');
+		expect(() => validateBoardForCase(downgraded, caseRecord, [])).not.toThrow();
+	});
+
+	it('leaves facts that do have confirmed evidence untouched', () => {
+		const caseRecord = record();
+		caseRecord.evidence.push({
+			id: 'user-confirmed',
+			kind: 'message',
+			content: '物业回复：房间已经分配，钥匙在前台领取。',
+			sourceLabel: '物业',
+			occurredAt: null,
+			confirmation: 'official'
+		});
+		const proposed = board();
+		proposed.claims[0] = {
+			id: 'claim-fact',
+			kind: 'fact',
+			text: '房间已经分配',
+			evidenceIds: ['user-confirmed']
+		};
+		const { board: downgraded, downgrades } = downgradeUnsupportedFacts(proposed, caseRecord);
+		expect(downgrades).toHaveLength(0);
+		expect(downgraded.claims[0].kind).toBe('fact');
 	});
 });

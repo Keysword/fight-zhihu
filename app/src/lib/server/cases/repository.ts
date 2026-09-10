@@ -68,6 +68,13 @@ export class CaseNotFoundError extends Error {
 	}
 }
 
+export class EvidenceNotFoundError extends Error {
+	constructor(evidenceId: string) {
+		super(`找不到证据：${evidenceId}`);
+		this.name = 'EvidenceNotFoundError';
+	}
+}
+
 function summaryFromRow(row: CaseRow): CaseSummary {
 	return {
 		id: row.id,
@@ -98,6 +105,7 @@ export interface CaseRepository {
 	getCase(caseId: string): CaseRecord | null;
 	appendEvidence(caseId: string, input: z.input<typeof newEvidenceSchema>): Evidence;
 	saveBoard(caseId: string, expectedRevision: number, board: BackgroundBoard): CaseRecord;
+	confirmEvidence(caseId: string, evidenceId: string): Evidence;
 	stageBoardProposal(caseId: string, expectedRevision: number, board: BackgroundBoard): CaseRecord;
 	confirmBoardProposal(caseId: string, expectedRevision: number): CaseRecord;
 	discardBoardProposal(caseId: string, expectedRevision: number): CaseRecord;
@@ -215,6 +223,19 @@ export function createCaseRepository(path: string): CaseRepository {
 				throw new RevisionConflictError();
 			}
 			return recordFromRow(requireCase(caseId));
+		},
+
+		confirmEvidence(caseId, evidenceId) {
+			requireCase(caseId);
+			const now = new Date().toISOString();
+			const result = database
+				.prepare('UPDATE evidence SET confirmation = ? WHERE id = ? AND case_id = ?')
+				.run('official', evidenceId, caseId);
+			if (Number(result.changes) !== 1) throw new EvidenceNotFoundError(evidenceId);
+			database.prepare('UPDATE cases SET updated_at = ? WHERE id = ?').run(now, caseId);
+			const evidence = getEvidence(caseId).find((item) => item.id === evidenceId);
+			if (!evidence) throw new EvidenceNotFoundError(evidenceId);
+			return evidence;
 		},
 
 		stageBoardProposal(caseId, expectedRevision, inputBoard) {

@@ -127,6 +127,25 @@
 		evidenceConfirmed = false;
 		evidenceIsOfficial = false;
 	}
+
+	/** 在证据轨上直接把一条证据升级为“负责方已明确回复”。 */
+	async function confirmEvidenceItem(evidenceId: string) {
+		loading = true;
+		failure = '';
+		try {
+			const response = await fetch(
+				`${base}/api/cases/${view.case.id}/evidence/${evidenceId}/confirm`,
+				{ method: 'POST' }
+			);
+			const payload = await response.json();
+			if (!response.ok || !payload.ok) throw new Error(payload.error?.message ?? '确认没有成功');
+			updatedView = { case: payload.data.case, events: payload.data.events };
+		} catch (error) {
+			failure = error instanceof Error ? error.message : '确认没有成功';
+		} finally {
+			loading = false;
+		}
+	}
 </script>
 
 <svelte:head><title>{view.case.title} · 背景板</title></svelte:head>
@@ -150,7 +169,10 @@
 		<div class="board-grid">
 			<aside class="evidence-column">
 				<h2 class="column-title">你掌握的证据 <span>{view.case.evidence.length} 条</span></h2>
-				<EvidenceRail evidence={view.case.evidence} />
+				<p class="fine-print">
+					负责方明确回复过的信息，点“负责方已明确回复过”升级为已确认，才能支撑“已确认事实”。
+				</p>
+				<EvidenceRail evidence={view.case.evidence} onConfirm={confirmEvidenceItem} />
 			</aside>
 			<section class="understanding-column">
 				<h2 class="column-title">背景是怎样拼起来的 <span>事实 / 未知 / 冲突</span></h2>

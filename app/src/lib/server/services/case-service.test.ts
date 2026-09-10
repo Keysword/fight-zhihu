@@ -180,4 +180,44 @@ describe('case service', () => {
 		expect(reviewed.events.at(-1)?.type).toBe('board.proposal_confirmed');
 		repository.close();
 	});
+
+	// 用户在证据轨上确认“这条是负责方明确回复过”，之后模型才能据此写 fact。
+	it('lets the user promote an evidence item to confirmed', () => {
+		const { repository, service } = setup();
+		const created = service.createCase({
+			title: '宿舍入住',
+			goal: '确认能否入住',
+			confusion: '不清楚',
+			evidence: [
+				{
+					kind: 'message',
+					content: '物业回复：房间已经分配。',
+					sourceLabel: '物业',
+					occurredAt: null
+				}
+			]
+		});
+		const evidenceId = created.case.evidence[0].id;
+		expect(created.case.evidence[0].confirmation).toBe('self_reported');
+
+		const confirmed = service.confirmEvidence(created.case.id, evidenceId);
+
+		expect(confirmed.case.evidence[0].confirmation).toBe('official');
+		expect(confirmed.events.at(-1)?.type).toBe('evidence.confirmed');
+		expect(confirmed.events.at(-1)?.payload.evidenceId).toBe(evidenceId);
+		repository.close();
+	});
+
+	it('rejects confirming evidence that does not belong to the case', () => {
+		const { repository, service } = setup();
+		const created = service.createCase({
+			title: '宿舍入住',
+			goal: '确认能否入住',
+			confusion: '不清楚'
+		});
+		expect(() => service.confirmEvidence(created.case.id, 'not-a-real-evidence')).toThrow(
+			/找不到证据/
+		);
+		repository.close();
+	});
 });

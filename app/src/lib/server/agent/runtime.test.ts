@@ -412,6 +412,48 @@ describe('stateful agent runtime', () => {
 		repo.close();
 	});
 
+	it('downgrades an unsupported fact instead of failing the whole run', async () => {
+		const repo = repository();
+		const created = repo.createCase({
+			title: '宿舍入住',
+			goal: '确认能否入住',
+			confusion: '不清楚'
+		});
+		const evidence = repo.appendEvidence(created.id, {
+			kind: 'message',
+			content: '人力说以邮件为准',
+			sourceLabel: '人力',
+			occurredAt: null
+		});
+		// 模型把只由聊天记录支撑的信息写成 fact，且连续两次都改不动。
+		const board = validBoard(created.id, evidence.id);
+		board.claims[0] = {
+			id: 'claim-1',
+			kind: 'fact',
+			text: '人力说以邮件为准',
+			evidenceIds: [evidence.id]
+		};
+		// 模型收到修复原因后仍然坚持写成 fact，这正是线上观察到的行为。
+		const model = scriptedModel([
+			JSON.stringify({ type: 'propose_board_patch', board, summary: '记录事实' }),
+			JSON.stringify({ type: 'propose_board_patch', board, summary: '再次记录事实' }),
+			'{"type":"finish","summary":"完成"}'
+		]);
+		const zhihu = { searchZhihu: vi.fn(async () => []), searchGlobal: vi.fn(async () => []) };
+
+		const result = await createAgentRuntime({ repository: repo, model, zhihu }).run(created.id);
+
+		expect(result.outcome).toBe('finished');
+		const settled = repo.getCase(created.id)?.board;
+		expect(settled?.claims[0].kind).toBe('statement');
+		expect(settled?.claims[0].text).toBe('人力说以邮件为准');
+		expect(settled?.claims[0].rationale).toContain('暂按他人说法记录');
+		expect(
+			repo.listEvents(created.id).some((event) => event.type === 'agent.fact_downgraded')
+		).toBe(true);
+		repo.close();
+	});
+
 	it('accepts a fact that cites evidence the user confirmed', async () => {
 		const repo = repository();
 		const created = repo.createCase({

@@ -6,7 +6,7 @@ import { buildDormDemoFallback } from './fallback';
 import { ModelConfigurationError, type ModelClient, type ModelMessage } from './model-client';
 import { buildAgentMessages } from './prompt';
 import { AgentProtocolError, parseAgentAction, type AgentAction } from './protocol';
-import { validateBoardForCase, AgentSafetyError } from './tools';
+import { validateBoardForCase, AgentSafetyError, downgradeUnsupportedFacts } from './tools';
 
 const MAX_TURNS = 6;
 const MAX_SEARCHES = 2;
@@ -265,29 +265,42 @@ export function createAgentRuntime(dependencies: RuntimeDependencies) {
 										reason
 									}
 								});
-								throw error;
+								// 模型改不动就由产品兜底：保留这条信息，但按“他人说法”记录，
+								// 而不是让用户拿不到任何结果。降级后仍不合法才真正失败。
+								const downgraded = downgradeUnsupportedFacts(action.board, caseRecord);
+								if (downgraded.downgrades.length === 0) throw error;
+								validateBoardForCase(downgraded.board, caseRecord, gatheredClues);
+								action = { ...action, board: downgraded.board };
+								repository.appendEvent(caseId, {
+									type: 'agent.fact_downgraded',
+									payload: {
+										summary: `${downgraded.downgrades.length} 条缺少正式确认的判断已按他人说法记录`,
+										claims: downgraded.downgrades
+									}
+								});
+							} else {
+								safetyRepairUsed = true;
+								repository.appendEvent(caseId, {
+									type: 'agent.safety_repair',
+									payload: {
+										summary: '背景板未通过安全校验，已要求模型按具体原因修正后重新提交',
+										reason
+									}
+								});
+								messages.push(
+									toolMessage({
+										error: '背景板没有通过安全校验',
+										reason,
+										instruction:
+											'请只修正被指出的问题，其余字段保持原样，然后重新输出一个完整的 propose_board_patch 动作 JSON。' +
+											'如果某条判断缺少证据支撑，可以把它从 fact 降级为 statement 或 inference；' +
+											'如果只有用户才能确认某项证据已经获得负责方明确回复，可以用 ask_user 询问用户。'
+									})
+								);
+								// 修复回合不占用本轮的决策预算。
+								turn -= 1;
+								break;
 							}
-							safetyRepairUsed = true;
-							repository.appendEvent(caseId, {
-								type: 'agent.safety_repair',
-								payload: {
-									summary: '背景板未通过安全校验，已要求模型按具体原因修正后重新提交',
-									reason
-								}
-							});
-							messages.push(
-								toolMessage({
-									error: '背景板没有通过安全校验',
-									reason,
-									instruction:
-										'请只修正被指出的问题，其余字段保持原样，然后重新输出一个完整的 propose_board_patch 动作 JSON。' +
-										'如果某条判断缺少证据支撑，可以把它从 fact 降级为 statement 或 inference；' +
-										'如果只有用户才能确认某项证据已经获得负责方明确回复，可以用 ask_user 询问用户。'
-								})
-							);
-							// 修复回合不占用本轮的决策预算。
-							turn -= 1;
-							break;
 						}
 						if (requiresReview) {
 							const staged = repository.stageBoardProposal(

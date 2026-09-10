@@ -146,6 +146,20 @@ export function createCaseService(dependencies: {
 
 		getCase: view,
 
+		/**
+		 * 用户在证据轨上确认“这条是负责方明确回复过”。
+		 * 确认本身不重新分析：板上的判断仍由用户决定是否重新运行。
+		 */
+		confirmEvidence(caseId: string, evidenceId: string): CaseView {
+			requireCase(caseId);
+			const evidence = repository.confirmEvidence(caseId, evidenceId);
+			repository.appendEvent(caseId, {
+				type: 'evidence.confirmed',
+				payload: { evidenceId: evidence.id, sourceLabel: evidence.sourceLabel }
+			});
+			return view(caseId);
+		},
+
 		reviewBoardProposal(caseId: string, input: z.input<typeof proposalReviewSchema>): CaseView {
 			const parsed = proposalReviewSchema.parse(input);
 			const current = requireCase(caseId);
