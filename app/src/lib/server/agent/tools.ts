@@ -29,12 +29,35 @@ function assertKnownEvidence(ids: string[], knownEvidence: Set<string>, context:
 	}
 }
 
-function trigrams(text: string): Set<string> {
-	const compact = text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
-	const values = new Set<string>();
-	for (let index = 0; index <= compact.length - 3; index += 1)
-		values.add(compact.slice(index, index + 3));
-	return values;
+function compact(text: string): string {
+	return text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+/** 否证与转折词：证据里没出现、结论里却出现时，不允许作为已确认事实。 */
+const NEGATION_MARKERS = [
+	'尚未',
+	'没有',
+	'未能',
+	'无法',
+	'不能',
+	'不可',
+	'无需',
+	'不用',
+	'不需要',
+	'取消',
+	'不再',
+	'并非',
+	'不是'
+];
+
+function assertNoUnsupportedNegation(claimText: string, confirmed: Evidence[]): void {
+	const claim = compact(claimText);
+	const evidenceTexts = confirmed.map((evidence) => compact(evidence.content));
+	for (const marker of NEGATION_MARKERS) {
+		if (!claim.includes(marker)) continue;
+		if (evidenceTexts.some((text) => text.includes(marker))) continue;
+		throw new AgentSafetyError(`已确认事实“${claimText}”包含证据未支持的否定或转折（“${marker}”）`);
+	}
 }
 
 function assertFactSupport(claim: BackgroundBoard['claims'][number], caseRecord: CaseRecord): void {
@@ -46,13 +69,17 @@ function assertFactSupport(claim: BackgroundBoard['claims'][number], caseRecord:
 			`已确认事实“${claim.text}”必须引用正式通知，或引用用户标记为已确认的证据`
 		);
 	}
-	const claimParts = trigrams(claim.text);
-	const supported = confirmed.some((evidence) => {
-		const evidenceParts = trigrams(evidence.content);
-		return [...claimParts].some((part) => evidenceParts.has(part));
-	});
+	// 只靠零散片段重合不够：结论中出现证据没有的否定/转折时必须拒绝。
+	assertNoUnsupportedNegation(claim.text, confirmed);
+	// 结论必须作为证据原文中的一段连续文字出现，而不是拼凑出的新句子。
+	const claimTokens = compact(claim.text);
+	const supported = confirmed.some(
+		(evidence) => claimTokens.length >= 2 && compact(evidence.content).includes(claimTokens)
+	);
 	if (!supported)
-		throw new AgentSafetyError(`正式通知或已确认证据不能支持已确认事实“${claim.text}”`);
+		throw new AgentSafetyError(
+			`正式通知或已确认证据没有包含完整的“${claim.text}”，不能作为已确认事实`
+		);
 }
 
 function assertNoIntentLanguage(board: BackgroundBoard): void {

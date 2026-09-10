@@ -376,7 +376,9 @@ export function createAgentRuntime(dependencies: RuntimeDependencies) {
 				return {
 					outcome: 'partial',
 					summary: `本轮达到 ${MAX_TURNS} 次决策上限，当前背景板可用但可能尚未整理完`,
-					proposedBoard: proposedBoard ?? caseRecord.board ?? undefined,
+					// 只有真正进入待审流程的更新才能作为 proposedBoard 返回。
+					// 已落库的板由 case.board 携带；否则前端会把已生效的状态当成待确认提案。
+					proposedBoard,
 					turns: MAX_TURNS,
 					revision: caseRecord.revision
 				};

@@ -318,7 +318,11 @@ describe('stateful agent runtime', () => {
 		const result = await createAgentRuntime({ repository: repo, model, zhihu }).run(created.id);
 
 		expect(result.outcome).toBe('partial');
-		expect(result.proposedBoard).toBeDefined();
+		// 新案例的板已经直接落库，不是待审提案。
+		// 返回它会让前端显示一个点了就报错的确认入口。
+		expect(result.proposedBoard).toBeUndefined();
+		expect(repo.getCase(created.id)?.board).not.toBeNull();
+		expect(repo.getCase(created.id)?.pendingBoard ?? null).toBeNull();
 		expect(result.turns).toBe(6);
 		expect(model.calls).toHaveLength(6);
 		const events = repo.listEvents(created.id);

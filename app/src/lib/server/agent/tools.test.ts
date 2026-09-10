@@ -60,7 +60,33 @@ describe('board safety validation', () => {
 		proposed.claims[0].evidenceIds = ['official-notice'];
 		expect(() => validateBoardForCase(proposed, caseRecord, [])).not.toThrow();
 		proposed.claims[0].text = '工资已经到账';
-		expect(() => validateBoardForCase(proposed, caseRecord, [])).toThrow(/不能支持/);
+		expect(() => validateBoardForCase(proposed, caseRecord, [])).toThrow(/没有包含完整/);
+	});
+	it('does not let a fact smuggle in a contradiction the evidence never stated', () => {
+		const caseRecord = record();
+		caseRecord.evidence.push({
+			id: 'official-notice',
+			kind: 'notice',
+			content: '正式住宿通知：房间已经分配，请到前台领取钥匙。',
+			sourceLabel: '住宿管理通知',
+			occurredAt: null,
+			confirmation: 'official'
+		});
+		const proposed = board();
+		for (const text of [
+			'房间尚未分配',
+			'房间已经分配但钥匙不能领取',
+			'房间已经分配，钥匙无法在前台领取',
+			'房间已经分配，无需到前台领取钥匙'
+		]) {
+			proposed.claims[0] = {
+				id: 'claim-fact',
+				kind: 'fact',
+				text,
+				evidenceIds: ['official-notice']
+			};
+			expect(() => validateBoardForCase(proposed, caseRecord, [])).toThrow(AgentSafetyError);
+		}
 	});
 	it('accepts a fact backed by evidence the user marked as confirmed', () => {
 		const proposed = board();
