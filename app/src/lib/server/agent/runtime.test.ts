@@ -7,7 +7,8 @@ import { dormDemoEvidence } from '$lib/domain/demo-case';
 import type { BackgroundBoard, ExternalClue } from '$lib/domain/types';
 import { createCaseRepository, RevisionConflictError } from '$lib/server/cases/repository';
 import { ModelConfigurationError, type ModelClient, type ModelMessage } from './model-client';
-import { AgentLimitError, AgentSafetyError, createAgentRuntime } from './runtime';
+import { AgentProtocolError } from './protocol';
+import { AgentLimitError, AgentSafetyError, createAgentRuntime, runErrorDetail } from './runtime';
 
 const directories: string[] = [];
 
@@ -512,5 +513,23 @@ describe('stateful agent runtime', () => {
 			'participant-property'
 		);
 		repo.close();
+	});
+});
+
+describe('run error classification', () => {
+	// 曾经把协议错误报成“未通过安全校验”，用户因此被引向错误的补救方向。
+	it('reports a protocol failure as a model formatting problem, not a safety rejection', () => {
+		const detail = runErrorDetail(new AgentProtocolError('模型动作不符合协议'));
+		expect(detail.title).toBe('模型没有返回可执行的动作');
+		expect(detail.title).not.toContain('安全校验');
+		expect(detail.code).toBe('AGENT_PROTOCOL_REJECTED');
+		expect(detail.suggestion).toContain('重新运行');
+	});
+
+	it('reports a safety failure with its concrete reason', () => {
+		const detail = runErrorDetail(new AgentSafetyError('已确认事实“X”必须引用正式通知'));
+		expect(detail.title).toBe('模型输出未通过安全校验');
+		expect(detail.code).toBe('SAFETY_REJECTED');
+		expect(detail.summary).toContain('必须引用正式通知');
 	});
 });

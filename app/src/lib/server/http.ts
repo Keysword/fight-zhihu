@@ -64,11 +64,10 @@ export function apiError(error: unknown): Response {
 		status = 502;
 		code = 'AGENT_OUTPUT_REJECTED';
 		const detail = runErrorDetail(error);
-		message = `Agent 返回的内容未通过安全校验：${detail.summary}`;
 		return json(
 			{
 				ok: false,
-				error: { code, message, title: detail.title, suggestion: detail.suggestion }
+				error: { code, message: detail.summary, title: detail.title, suggestion: detail.suggestion }
 			},
 			{ status }
 		);

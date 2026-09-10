@@ -5,7 +5,7 @@ import type { ZhihuClient } from '$lib/server/zhihu/client';
 import { buildDormDemoFallback } from './fallback';
 import { ModelConfigurationError, type ModelClient, type ModelMessage } from './model-client';
 import { buildAgentMessages } from './prompt';
-import { parseAgentAction, type AgentAction } from './protocol';
+import { AgentProtocolError, parseAgentAction, type AgentAction } from './protocol';
 import { validateBoardForCase, AgentSafetyError } from './tools';
 
 const MAX_TURNS = 6;
@@ -52,6 +52,14 @@ export function runErrorDetail(error: unknown): AgentRunErrorDetail {
 			title: '模型输出未通过安全校验',
 			summary: error.message,
 			suggestion: '补充或确认相关证据后重新分析；模型会在下一轮按校验原因自行修正。'
+		};
+	}
+	if (error instanceof AgentProtocolError) {
+		return {
+			code: 'AGENT_PROTOCOL_REJECTED',
+			title: '模型没有返回可执行的动作',
+			summary: error.message,
+			suggestion: '这是模型侧的格式问题，材料已经保存，可以直接重新运行本轮分析。'
 		};
 	}
 	if (error instanceof AgentLimitError) {
