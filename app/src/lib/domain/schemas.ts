@@ -28,7 +28,9 @@ export const claimSchema = z
 		id: z.string().min(1),
 		kind: claimKindSchema,
 		text: z.string().trim().min(1),
-		evidenceIds: z.array(z.string().min(1)),
+		// unknown 类判断在语义上可以没有证据，模型经常据此省略该字段。
+		// 默认空数组不会放松约束：fact/statement 会在 superRefine 中因证据不足被拒绝。
+		evidenceIds: z.array(z.string().min(1)).default([]),
 		rationale: z.string().trim().optional(),
 		relatedClaimIds: z.array(z.string().min(1)).optional()
 	})

@@ -22,7 +22,8 @@ const proposeBoardActionSchema = z
 	.object({
 		type: z.literal('propose_board_patch'),
 		board: backgroundBoardSchema,
-		summary: z.string().trim().min(1).max(500)
+		// summary 只是给人看的动作说明，模型漏写时不该让整轮判断失败。
+		summary: z.string().trim().min(1).max(500).default('更新背景板')
 	})
 	.strict();
 

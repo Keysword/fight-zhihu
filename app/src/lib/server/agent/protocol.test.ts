@@ -92,4 +92,49 @@ describe('agent protocol', () => {
 			)
 		).toThrow(AgentProtocolError);
 	});
+
+	// 实测失败模式：模型对 unknown 类判断省略 evidenceIds，并且偶尔漏写 summary。
+	// 两者都不该让整轮判断失败，但 fact/statement 的证据约束必须继续生效。
+	it('tolerates an omitted evidenceIds on an unknown claim and a missing summary', () => {
+		const board = {
+			caseId: 'case-1',
+			title: '宿舍',
+			goal: '入住',
+			stage: 'understanding',
+			currentBlocker: '房间未知',
+			claims: [{ id: 'unknown-1', kind: 'unknown', text: '房间是否分配仍未知' }],
+			participants: [],
+			keyCompleter: null,
+			nextAction: null,
+			externalClues: [],
+			updatedAt: new Date().toISOString()
+		};
+		const parsed = parseAgentAction(JSON.stringify({ type: 'propose_board_patch', board })) as {
+			summary: string;
+			board: { claims: Array<{ evidenceIds: string[] }> };
+		};
+		expect(parsed.summary).toBe('更新背景板');
+		expect(parsed.board.claims[0].evidenceIds).toEqual([]);
+	});
+
+	it('still rejects a fact or statement that omits evidenceIds', () => {
+		for (const kind of ['fact', 'statement']) {
+			const board = {
+				caseId: 'case-1',
+				title: '宿舍',
+				goal: '入住',
+				stage: 'understanding',
+				currentBlocker: '房间未知',
+				claims: [{ id: 'c1', kind, text: '房间已经分配' }],
+				participants: [],
+				keyCompleter: null,
+				nextAction: null,
+				externalClues: [],
+				updatedAt: new Date().toISOString()
+			};
+			expect(() =>
+				parseAgentAction(JSON.stringify({ type: 'propose_board_patch', board }))
+			).toThrow(AgentProtocolError);
+		}
+	});
 });
