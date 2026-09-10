@@ -25,8 +25,11 @@
 	let sourceLabel = $state('我的补充');
 	let replacementText = $state('');
 	let evidenceConfirmed = $state(false);
+	let evidenceIsOfficial = $state(false);
 	let loading = $state(false);
 	let failure = $state('');
+	let failureTitle = $state('');
+	let failureSuggestion = $state('');
 	let changesOverride = $state<BoardChanges | null>(null);
 	let changes = $derived(
 		changesOverride ?? diffBoards(data.view.case.board, data.view.case.pendingBoard ?? null)
@@ -42,6 +45,8 @@
 	async function refreshFrom(endpoint: string, body?: unknown) {
 		loading = true;
 		failure = '';
+		failureTitle = '';
+		failureSuggestion = '';
 		try {
 			const response = await fetch(endpoint, {
 				method: 'POST',
@@ -49,15 +54,26 @@
 				body: body ? JSON.stringify(body) : undefined
 			});
 			const payload = await response.json();
-			if (!response.ok || !payload.ok)
+			if (!response.ok || !payload.ok) {
+				failureTitle = payload.error?.title ?? '';
+				failureSuggestion = payload.error?.suggestion ?? '';
 				throw new Error(payload.error?.message ?? '本轮判断没有完成');
+			}
 			const nextProposal =
 				payload.data.run?.proposedBoard ?? payload.data.case.pendingBoard ?? null;
 			changesOverride = diffBoards(view.case.board, nextProposal ?? payload.data.case.board);
 			updatedView = { case: payload.data.case, events: payload.data.events };
 			proposedOverride = nextProposal;
 			newEvidence = '';
-			if (payload.data.run?.outcome === 'failed') failure = payload.data.run.summary;
+			if (payload.data.run?.outcome === 'failed') {
+				failure = payload.data.run.summary;
+				failureTitle = payload.data.run.error?.title ?? '';
+				failureSuggestion = payload.data.run.error?.suggestion ?? '';
+			}
+			if (payload.data.run?.outcome === 'partial') {
+				failure = payload.data.run.summary;
+				failureTitle = '本轮未完全整理';
+			}
 			if (!nextProposal) clearChangesLater();
 		} catch (error) {
 			failure = error instanceof Error ? error.message : '本轮判断没有完成';
@@ -104,10 +120,12 @@
 			content: newEvidence,
 			sourceLabel,
 			replacements,
-			occurredAt: null
+			occurredAt: null,
+			confirmation: evidenceIsOfficial ? 'official' : 'self_reported'
 		});
 		replacementText = '';
 		evidenceConfirmed = false;
+		evidenceIsOfficial = false;
 	}
 </script>
 
@@ -229,10 +247,15 @@
 			placeholder="可选：每行填写 原词 => 替换词"></textarea>
 		{#if evidencePreview}
 			<div class="preview-box compact-preview">
-				<strong>本次外发预览</strong>\n\n{evidencePreview}
+				<strong>本次外发预览</strong>
+
+				{evidencePreview}
 			</div>
 			<label class="fine-print confirmation-line"
 				><input type="checkbox" bind:checked={evidenceConfirmed} /> 我已检查这条新证据的脱敏预览</label
+			>
+			<label class="fine-print confirmation-line"
+				><input type="checkbox" bind:checked={evidenceIsOfficial} /> 负责方已经明确回复过这个结果（可被当作已确认事实）</label
 			>
 		{/if}
 		<button
@@ -242,7 +265,13 @@
 			disabled={loading || !newEvidence.trim() || !evidenceConfirmed}
 			>{loading ? '正在重新判断…' : '加入证据并继续判断'}</button
 		>
-		{#if failure}<div class="error-box" role="alert">{failure}</div>{/if}
+		{#if failure}
+			<div class="error-box" role="alert">
+				{#if failureTitle}<strong>{failureTitle}</strong>{/if}
+				<p>{failure}</p>
+				{#if failureSuggestion}<p class="fine-print">{failureSuggestion}</p>{/if}
+			</div>
+		{/if}
 		{#if changes.blocker || changes.claimIds.length || changes.removedClaimCount || changes.nextAction || changes.stage || changes.keyCompleter || changes.participants || changes.externalClues}
 			<p class="update-note" aria-live="polite">
 				本次更新：{changes.stage ? '事项阶段已变化；' : ''}{changes.blocker

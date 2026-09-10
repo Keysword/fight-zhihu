@@ -30,6 +30,7 @@ export function openDatabase(path: string): DatabaseSync {
 			content TEXT NOT NULL,
 			source_label TEXT NOT NULL,
 			occurred_at TEXT,
+			confirmation TEXT NOT NULL DEFAULT 'self_reported',
 			created_at TEXT NOT NULL
 		);
 
@@ -56,6 +57,17 @@ export function openDatabase(path: string): DatabaseSync {
 	}
 	if (!caseColumns.some((column) => column.name === 'pending_revision')) {
 		database.exec('ALTER TABLE cases ADD COLUMN pending_revision INTEGER');
+	}
+	const evidenceColumns = database
+		.prepare('PRAGMA table_info(evidence)')
+		.all() as unknown as Array<{
+		name: string;
+	}>;
+	if (!evidenceColumns.some((column) => column.name === 'confirmation')) {
+		database.exec(
+			"ALTER TABLE evidence ADD COLUMN confirmation TEXT NOT NULL DEFAULT 'self_reported'"
+		);
+		database.exec("UPDATE evidence SET confirmation = 'official' WHERE kind = 'notice'");
 	}
 	return database;
 }

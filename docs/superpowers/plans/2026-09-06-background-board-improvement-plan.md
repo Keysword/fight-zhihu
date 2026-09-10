@@ -191,6 +191,20 @@ B 的正确定位是**信任机制**，不是**效率机制**：它让用户和�
 
 **验收**：阶段 1 完成的标志是——用 3 个真实（脱敏）案例跑通分析，不再出现"整轮失败且用户不知道为什么"。
 
+**完成记录（2026-09-06，分支 `plan/full-assessment-and-improvement`）**
+
+| 项 | 状态 | 落点 |
+| --- | --- | --- |
+| 安全校验失败一次修复机会 | 已完成 | `runtime.ts` 新增 `safetyRepairUsed`，把具体拒绝原因回灌模型；第二次仍失败才抛错并记录 `agent.error(category: 'safety')` |
+| 失败原因可见化 | 已完成 | `AgentSafetyError` / `AgentLimitError` 增加 `code`；新增 `runErrorDetail()` 统一产出 `title/summary/suggestion`；`case-service.ts` 保留原因并写入 `agent.run_failed` 事件；`http.ts` 返回 `title/suggestion`；案例页展示失败标题与恢复建议 |
+| 放宽 `fact` 支撑来源 | 已完成 | `Evidence` 新增 `confirmation: 'official' \| 'self_reported'`（默认后者）；`assertFactSupport` 接受 `notice` 或用户已确认证据；`db.ts` 增加列迁移并把历史 `notice` 回填为 `official`；案例页新增"负责方已明确回复过这个结果"勾选 |
+| 决策预算耗尽返回部分结果 | 已完成 | 已有板时返回 `outcome: 'partial'` 与当前板；无板时仍抛 `AgentLimitError`；演示案例回落到已审核结果 |
+| 补测试 | 已完成 | 新增 5 个用例：安全修复成功、二次拒绝并记录原因、已确认证据支撑事实、预算耗尽返回部分板、无板仍失败 |
+
+**验证结果**：`format:check` / `lint` / `check`（0 错） / `test:unit`（15 文件 65 用例全绿，原 60 + 新增 5） / `playwright test`（4 用例全绿） / `build`（`build/index.js` 生成）。
+
+**阶段 1 未闭环的部分**：上述"用 3 个真实脱敏案例跑通"需要真实模型凭证，本轮无法执行；这正是 M1 的剩余动作，也是 R1/R2 严重度的最终判定依据。`preview` 与生产共享 `app/data` 的隐患（R13）未处理，留待阶段 5。
+
 ### 阶段 2：落地最小可用的"个人背景地图"（C 层）
 
 目标：把唯一有留存价值的能力做出来，且做到**零维护**。对应 R3 / R4。

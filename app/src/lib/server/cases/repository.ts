@@ -43,6 +43,7 @@ interface EvidenceRow {
 	content: string;
 	source_label: string;
 	occurred_at: string | null;
+	confirmation: Evidence['confirmation'];
 }
 
 interface EventRow {
@@ -86,7 +87,8 @@ function evidenceFromRow(row: EvidenceRow): Evidence {
 		kind: row.kind,
 		content: row.content,
 		sourceLabel: row.source_label,
-		occurredAt: row.occurred_at
+		occurredAt: row.occurred_at,
+		confirmation: row.confirmation
 	});
 }
 
@@ -120,7 +122,7 @@ export function createCaseRepository(path: string): CaseRepository {
 	function getEvidence(caseId: string): Evidence[] {
 		const rows = database
 			.prepare(
-				'SELECT id, kind, content, source_label, occurred_at FROM evidence WHERE case_id = ? ORDER BY created_at, rowid'
+				'SELECT id, kind, content, source_label, occurred_at, confirmation FROM evidence WHERE case_id = ? ORDER BY created_at, rowid'
 			)
 			.all(caseId) as unknown as EvidenceRow[];
 		return rows.map(evidenceFromRow);
@@ -172,7 +174,7 @@ export function createCaseRepository(path: string): CaseRepository {
 			try {
 				database
 					.prepare(
-						'INSERT INTO evidence (id, case_id, kind, content, source_label, occurred_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+						'INSERT INTO evidence (id, case_id, kind, content, source_label, occurred_at, confirmation, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
 					)
 					.run(
 						evidence.id,
@@ -181,6 +183,7 @@ export function createCaseRepository(path: string): CaseRepository {
 						evidence.content,
 						evidence.sourceLabel,
 						evidence.occurredAt,
+						evidence.confirmation,
 						now
 					);
 				database.prepare('UPDATE cases SET updated_at = ? WHERE id = ?').run(now, caseId);

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 export const evidenceKindSchema = z.enum(['message', 'email', 'notice', 'call', 'note']);
+export const confirmationKindSchema = z.enum(['official', 'self_reported']);
 export const caseStageSchema = z.enum([
 	'collecting',
 	'understanding',
@@ -17,7 +18,8 @@ export const evidenceSchema = z
 		kind: evidenceKindSchema,
 		content: z.string().trim().min(1),
 		sourceLabel: z.string().trim().min(1),
-		occurredAt: z.string().datetime().nullable()
+		occurredAt: z.string().datetime().nullable(),
+		confirmation: confirmationKindSchema.default('self_reported')
 	})
 	.strict();
 

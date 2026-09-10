@@ -54,12 +54,40 @@ describe('board safety validation', () => {
 			kind: 'notice',
 			content: '正式住宿通知：房间已经分配，请到前台领取钥匙。',
 			sourceLabel: '住宿管理通知',
-			occurredAt: null
+			occurredAt: null,
+			confirmation: 'official'
 		});
 		proposed.claims[0].evidenceIds = ['official-notice'];
 		expect(() => validateBoardForCase(proposed, caseRecord, [])).not.toThrow();
 		proposed.claims[0].text = '工资已经到账';
 		expect(() => validateBoardForCase(proposed, caseRecord, [])).toThrow(/不能支持/);
+	});
+	it('accepts a fact backed by evidence the user marked as confirmed', () => {
+		const proposed = board();
+		const caseRecord = record();
+		caseRecord.evidence.push({
+			id: 'user-confirmed',
+			kind: 'message',
+			content: '物业回复：房间已经分配，钥匙在前台领取。',
+			sourceLabel: '物业',
+			occurredAt: null,
+			confirmation: 'official'
+		});
+		proposed.claims[0] = {
+			id: 'claim-fact',
+			kind: 'fact',
+			text: '房间已经分配',
+			evidenceIds: ['user-confirmed']
+		};
+		expect(() => validateBoardForCase(proposed, caseRecord, [])).not.toThrow();
+
+		proposed.claims[0] = {
+			id: 'claim-fact',
+			kind: 'fact',
+			text: '房间已经分配',
+			evidenceIds: ['evidence-contact']
+		};
+		expect(() => validateBoardForCase(proposed, caseRecord, [])).toThrow(/用户标记为已确认/);
 	});
 	it('rejects motive accusations in participant and action fields', () => {
 		const proposed = board();

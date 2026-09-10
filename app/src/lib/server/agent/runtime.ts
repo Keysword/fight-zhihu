@@ -6,27 +6,76 @@ import { buildDormDemoFallback } from './fallback';
 import { ModelConfigurationError, type ModelClient, type ModelMessage } from './model-client';
 import { buildAgentMessages } from './prompt';
 import { parseAgentAction, type AgentAction } from './protocol';
-import { validateBoardForCase } from './tools';
+import { validateBoardForCase, AgentSafetyError } from './tools';
 
 const MAX_TURNS = 6;
 const MAX_SEARCHES = 2;
 
 export { AgentSafetyError } from './tools';
+export type { AgentErrorCode } from './tools';
 
 export class AgentLimitError extends Error {
-	constructor(message: string) {
+	readonly code: 'TURN_LIMIT_REACHED' | 'SEARCH_LIMIT_REACHED';
+
+	constructor(message: string, code: 'TURN_LIMIT_REACHED' | 'SEARCH_LIMIT_REACHED') {
 		super(message);
 		this.name = 'AgentLimitError';
+		this.code = code;
 	}
 }
 
+export interface AgentRunErrorDetail {
+	code: string;
+	title: string;
+	summary: string;
+	suggestion: string;
+}
+
 export interface AgentRunResult {
-	outcome: 'finished' | 'needs_input' | 'fallback' | 'failed' | 'review_required';
+	outcome: 'finished' | 'needs_input' | 'fallback' | 'failed' | 'review_required' | 'partial';
 	summary: string;
 	question?: string;
 	proposedBoard?: import('$lib/domain/types').BackgroundBoard;
+	error?: AgentRunErrorDetail;
 	turns: number;
 	revision: number;
+}
+
+/**
+ * 把运行期错误翻译成"用户能看懂、开发能定位"的结构化信息。
+ * 这是失败原因第一次真正到达用户界面和事件流。
+ */
+export function runErrorDetail(error: unknown): AgentRunErrorDetail {
+	if (error instanceof AgentSafetyError) {
+		return {
+			code: error.code,
+			title: '模型输出未通过安全校验',
+			summary: error.message,
+			suggestion: '补充或确认相关证据后重新分析；模型会在下一轮按校验原因自行修正。'
+		};
+	}
+	if (error instanceof AgentLimitError) {
+		return {
+			code: error.code,
+			title: '本轮决策次数用尽',
+			summary: error.message,
+			suggestion: '材料较多时可以分批补充证据，或稍后重新运行本轮分析。'
+		};
+	}
+	if (error instanceof ModelConfigurationError) {
+		return {
+			code: 'MODEL_NOT_CONFIGURED',
+			title: '尚未配置分析模型',
+			summary: error.message,
+			suggestion: '配置 AGENT_* 或 OpenCode Server 后重新分析；预置演示案例不受影响。'
+		};
+	}
+	return {
+		code: 'AGENT_RUN_FAILED',
+		title: '本轮分析没有完成',
+		summary: error instanceof Error ? error.message : '本轮分析遇到未知问题',
+		suggestion: '材料已经保存，可以稍后重新运行本轮分析。'
+	};
 }
 
 interface RuntimeDependencies {
@@ -104,6 +153,7 @@ export function createAgentRuntime(dependencies: RuntimeDependencies) {
 			let proposedBoard: import('$lib/domain/types').BackgroundBoard | undefined;
 			let searchCount = 0;
 			let protocolRepairUsed = false;
+			let safetyRepairUsed = false;
 
 			for (let turn = 1; turn <= MAX_TURNS; turn += 1) {
 				let rawAction: string;
@@ -166,7 +216,7 @@ export function createAgentRuntime(dependencies: RuntimeDependencies) {
 								type: 'agent.limit',
 								payload: { limit: 'search', maximum: MAX_SEARCHES }
 							});
-							throw new AgentLimitError('单轮最多执行两次外部搜索');
+							throw new AgentLimitError('单轮最多执行两次外部搜索', 'SEARCH_LIMIT_REACHED');
 						}
 						searchCount += 1;
 						let clues: ExternalClue[];
@@ -193,7 +243,42 @@ export function createAgentRuntime(dependencies: RuntimeDependencies) {
 					}
 
 					case 'propose_board_patch': {
-						validateBoardForCase(action.board, caseRecord, gatheredClues);
+						try {
+							validateBoardForCase(action.board, caseRecord, gatheredClues);
+						} catch (error) {
+							if (!(error instanceof AgentSafetyError)) throw error;
+							const reason = error.message;
+							if (safetyRepairUsed) {
+								repository.appendEvent(caseId, {
+									type: 'agent.error',
+									payload: {
+										category: 'safety',
+										summary: '模型连续两次提交了未通过安全校验的背景板',
+										reason
+									}
+								});
+								throw error;
+							}
+							safetyRepairUsed = true;
+							repository.appendEvent(caseId, {
+								type: 'agent.safety_repair',
+								payload: {
+									summary: '背景板未通过安全校验，已要求模型按具体原因修正后重新提交',
+									reason
+								}
+							});
+							messages.push(
+								toolMessage({
+									error: '背景板没有通过安全校验',
+									reason,
+									instruction:
+										'请只修正被指出的问题，其余字段保持原样，然后重新输出一个完整的 propose_board_patch 动作 JSON。'
+								})
+							);
+							// 修复回合不占用本轮的决策预算。
+							turn -= 1;
+							break;
+						}
 						if (requiresReview) {
 							const staged = repository.stageBoardProposal(
 								caseId,
@@ -279,7 +364,29 @@ export function createAgentRuntime(dependencies: RuntimeDependencies) {
 				type: 'agent.limit',
 				payload: { limit: 'turn', maximum: MAX_TURNS }
 			});
-			throw new AgentLimitError(`单轮最多执行 ${MAX_TURNS} 次 Agent 决策`);
+			if (caseRecord.board) {
+				// 已经有可校验的背景板时，预算耗尽不应该让用户什么都拿不到。
+				repository.appendEvent(caseId, {
+					type: 'agent.finished',
+					payload: {
+						outcome: 'partial',
+						summary: `本轮达到 ${MAX_TURNS} 次决策上限，当前背景板可用但可能尚未整理完`
+					}
+				});
+				return {
+					outcome: 'partial',
+					summary: `本轮达到 ${MAX_TURNS} 次决策上限，当前背景板可用但可能尚未整理完`,
+					proposedBoard: proposedBoard ?? caseRecord.board ?? undefined,
+					turns: MAX_TURNS,
+					revision: caseRecord.revision
+				};
+			}
+			if (isDemo)
+				return useDemoFallback(
+					caseId,
+					new AgentLimitError('演示案例达到决策上限', 'TURN_LIMIT_REACHED')
+				);
+			throw new AgentLimitError(`单轮最多执行 ${MAX_TURNS} 次 Agent 决策`, 'TURN_LIMIT_REACHED');
 		}
 	};
 }

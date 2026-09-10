@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import { z } from 'zod';
 
-import { AgentLimitError } from '$lib/server/agent/runtime';
+import { AgentLimitError, runErrorDetail } from '$lib/server/agent/runtime';
 import { AgentProtocolError } from '$lib/server/agent/protocol';
 import { AgentSafetyError } from '$lib/server/agent/tools';
 import { ModelClientError, ModelConfigurationError } from '$lib/server/agent/model-client';
@@ -63,7 +63,15 @@ export function apiError(error: unknown): Response {
 	} else if (error instanceof AgentSafetyError || error instanceof AgentProtocolError) {
 		status = 502;
 		code = 'AGENT_OUTPUT_REJECTED';
-		message = 'Agent 返回的内容未通过安全校验，请补充证据后重试';
+		const detail = runErrorDetail(error);
+		message = `Agent 返回的内容未通过安全校验：${detail.summary}`;
+		return json(
+			{
+				ok: false,
+				error: { code, message, title: detail.title, suggestion: detail.suggestion }
+			},
+			{ status }
+		);
 	} else if (error instanceof AgentLimitError) {
 		status = 502;
 		code = 'AGENT_LIMIT_REACHED';

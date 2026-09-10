@@ -8,28 +8,32 @@ export const dormDemoEvidence: Evidence[] = [
 		kind: 'message',
 		content: '部门对接人：应该可以提前入住，我先申请。之后会有同事联系你，在门口接你。',
 		sourceLabel: '部门对接人',
-		occurredAt: at
+		occurredAt: at,
+		confirmation: 'self_reported'
 	},
 	{
 		id: 'evidence-guide',
 		kind: 'message',
 		content: '接引同事：我可以带你进入园区，但我们看不到住宿分配结果，需要问物业。',
 		sourceLabel: '接引同事',
-		occurredAt: '2026-08-01T09:00:00.000Z'
+		occurredAt: '2026-08-01T09:00:00.000Z',
+		confirmation: 'self_reported'
 	},
 	{
 		id: 'evidence-hr',
 		kind: 'message',
 		content: '人力：住宿结果以正式邮件通知为准。',
 		sourceLabel: '人力老师',
-		occurredAt: '2026-08-01T09:30:00.000Z'
+		occurredAt: '2026-08-01T09:30:00.000Z',
+		confirmation: 'self_reported'
 	},
 	{
 		id: 'evidence-user',
 		kind: 'note',
 		content: '我计划在 8 月 2 日 16:00 到达，但目前没有收到房间号，也不知道钥匙由谁交付。',
 		sourceLabel: '我的补充',
-		occurredAt: '2026-08-01T10:00:00.000Z'
+		occurredAt: '2026-08-01T10:00:00.000Z',
+		confirmation: 'self_reported'
 	}
 ];
 

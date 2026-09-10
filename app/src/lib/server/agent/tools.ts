@@ -1,14 +1,26 @@
 import { isDeepStrictEqual } from 'node:util';
-import type { BackgroundBoard, CaseRecord, ExternalClue } from '$lib/domain/types';
+import type { BackgroundBoard, CaseRecord, Evidence, ExternalClue } from '$lib/domain/types';
 
 const INTENT_LANGUAGE =
 	/(?:故意|恶意|刻意).{0,8}(?:隐瞒|不说|拖延|为难|针对)|推卸责任|针对新人|不想告诉|甩锅|刁难|打压/;
 
+export type AgentErrorCode = 'SAFETY_REJECTED' | 'TURN_LIMIT_REACHED' | 'SEARCH_LIMIT_REACHED';
+
 export class AgentSafetyError extends Error {
+	readonly code: AgentErrorCode = 'SAFETY_REJECTED';
+
 	constructor(message: string) {
 		super(message);
 		this.name = 'AgentSafetyError';
 	}
+}
+
+/**
+ * 正式通知，或用户显式标记为「已确认」的证据，都可以支撑一条已确认事实。
+ * 真实材料里很少有正式通知，因此不能把事实的唯一来源限定为 notice。
+ */
+function isConfirmedEvidence(evidence: Evidence): boolean {
+	return evidence.kind === 'notice' || evidence.confirmation === 'official';
 }
 
 function assertKnownEvidence(ids: string[], knownEvidence: Set<string>, context: string): void {
@@ -28,16 +40,19 @@ function trigrams(text: string): Set<string> {
 function assertFactSupport(claim: BackgroundBoard['claims'][number], caseRecord: CaseRecord): void {
 	if (claim.kind !== 'fact') return;
 	const cited = caseRecord.evidence.filter((evidence) => claim.evidenceIds.includes(evidence.id));
-	const official = cited.filter((evidence) => evidence.kind === 'notice');
-	if (official.length === 0) {
-		throw new AgentSafetyError(`已确认事实“${claim.text}”必须引用正式通知`);
+	const confirmed = cited.filter(isConfirmedEvidence);
+	if (confirmed.length === 0) {
+		throw new AgentSafetyError(
+			`已确认事实“${claim.text}”必须引用正式通知，或引用用户标记为已确认的证据`
+		);
 	}
 	const claimParts = trigrams(claim.text);
-	const supported = official.some((evidence) => {
+	const supported = confirmed.some((evidence) => {
 		const evidenceParts = trigrams(evidence.content);
 		return [...claimParts].some((part) => evidenceParts.has(part));
 	});
-	if (!supported) throw new AgentSafetyError(`正式通知不能支持已确认事实“${claim.text}”`);
+	if (!supported)
+		throw new AgentSafetyError(`正式通知或已确认证据不能支持已确认事实“${claim.text}”`);
 }
 
 function assertNoIntentLanguage(board: BackgroundBoard): void {

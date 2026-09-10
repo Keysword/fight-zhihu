@@ -294,7 +294,7 @@ describe('stateful agent runtime', () => {
 		repo.close();
 	});
 
-	it('stops after six autonomous decisions', async () => {
+	it('returns the current board when the turn budget runs out', async () => {
 		const repo = repository();
 		const created = repo.createCase({
 			title: '宿舍入住',
@@ -315,11 +315,129 @@ describe('stateful agent runtime', () => {
 		const model = scriptedModel([action]);
 		const zhihu = { searchZhihu: vi.fn(async () => []), searchGlobal: vi.fn(async () => []) };
 
+		const result = await createAgentRuntime({ repository: repo, model, zhihu }).run(created.id);
+
+		expect(result.outcome).toBe('partial');
+		expect(result.proposedBoard).toBeDefined();
+		expect(result.turns).toBe(6);
+		expect(model.calls).toHaveLength(6);
+		const events = repo.listEvents(created.id);
+		expect(events.some((event) => event.type === 'agent.limit')).toBe(true);
+		expect(events.at(-1)?.type).toBe('agent.finished');
+		expect(events.at(-1)?.payload.outcome).toBe('partial');
+		repo.close();
+	});
+
+	it('still fails when the turn budget runs out before any board exists', async () => {
+		const repo = repository();
+		const created = repo.createCase({
+			title: '宿舍入住',
+			goal: '确认能否入住',
+			confusion: '没有房间号'
+		});
+		const model = scriptedModel(['{"type":"search_zhihu","query":"新人入住","count":1}']);
+		const zhihu = { searchZhihu: vi.fn(async () => []), searchGlobal: vi.fn(async () => []) };
+
 		await expect(
 			createAgentRuntime({ repository: repo, model, zhihu }).run(created.id)
 		).rejects.toBeInstanceOf(AgentLimitError);
-		expect(model.calls).toHaveLength(6);
-		expect(repo.listEvents(created.id).at(-1)?.type).toBe('agent.limit');
+		expect(repo.getCase(created.id)?.board).toBeNull();
+		repo.close();
+	});
+
+	it('gives the model one safety repair turn with the exact rejection reason', async () => {
+		const repo = repository();
+		const created = repo.createCase({
+			title: '宿舍入住',
+			goal: '确认能否入住',
+			confusion: '不清楚'
+		});
+		const evidence = repo.appendEvidence(created.id, {
+			kind: 'message',
+			content: '同事说需要再问管理员',
+			sourceLabel: '同事',
+			occurredAt: null
+		});
+		const invalid = validBoard(created.id, 'not-in-this-case');
+		const corrected = validBoard(created.id, evidence.id);
+		const model = scriptedModel([
+			JSON.stringify({ type: 'propose_board_patch', board: invalid, summary: '错误更新' }),
+			JSON.stringify({ type: 'propose_board_patch', board: corrected, summary: '修正后的更新' }),
+			'{"type":"finish","summary":"已修正确认"}'
+		]);
+		const zhihu = { searchZhihu: vi.fn(async () => []), searchGlobal: vi.fn(async () => []) };
+
+		const result = await createAgentRuntime({ repository: repo, model, zhihu }).run(created.id);
+
+		expect(result.outcome).toBe('finished');
+		expect(repo.getCase(created.id)?.board?.currentBlocker).toBe('房间号尚未确认');
+		const repair = model.calls[1].find((message) => message.content.includes('安全校验'));
+		expect(repair?.content).toContain('不属于本案例的证据');
+		expect(repo.listEvents(created.id).some((event) => event.type === 'agent.safety_repair')).toBe(
+			true
+		);
+		expect(repo.listEvents(created.id).some((event) => event.type === 'agent.error')).toBe(false);
+		repo.close();
+	});
+
+	it('fails after a second rejected board and records the safety reason', async () => {
+		const repo = repository();
+		const created = repo.createCase({
+			title: '宿舍入住',
+			goal: '确认能否入住',
+			confusion: '不清楚'
+		});
+		const invalid = validBoard(created.id, 'not-in-this-case');
+		const action = JSON.stringify({
+			type: 'propose_board_patch',
+			board: invalid,
+			summary: '持续错误'
+		});
+		const model = scriptedModel([action]);
+		const zhihu = { searchZhihu: vi.fn(async () => []), searchGlobal: vi.fn(async () => []) };
+
+		await expect(
+			createAgentRuntime({ repository: repo, model, zhihu }).run(created.id)
+		).rejects.toBeInstanceOf(AgentSafetyError);
+		expect(model.calls).toHaveLength(2);
+		const last = repo.listEvents(created.id).at(-1);
+		expect(last?.type).toBe('agent.error');
+		expect(last?.payload.category).toBe('safety');
+		expect(String(last?.payload.reason)).toContain('不属于本案例的证据');
+		repo.close();
+	});
+
+	it('accepts a fact that cites evidence the user confirmed', async () => {
+		const repo = repository();
+		const created = repo.createCase({
+			title: '宿舍入住',
+			goal: '确认能否入住',
+			confusion: '不清楚'
+		});
+		const evidence = repo.appendEvidence(created.id, {
+			kind: 'message',
+			content: '物业已确认房间已经分配',
+			sourceLabel: '物业',
+			occurredAt: null,
+			confirmation: 'official'
+		});
+		const board = validBoard(created.id, evidence.id);
+		board.claims[0] = {
+			id: 'claim-1',
+			kind: 'fact',
+			text: '房间已经分配',
+			evidenceIds: [evidence.id]
+		};
+		const model = scriptedModel([
+			JSON.stringify({ type: 'propose_board_patch', board, summary: '记录已确认事实' }),
+			'{"type":"finish","summary":"完成"}'
+		]);
+		const zhihu = { searchZhihu: vi.fn(async () => []), searchGlobal: vi.fn(async () => []) };
+
+		const result = await createAgentRuntime({ repository: repo, model, zhihu }).run(created.id);
+
+		expect(result.outcome).toBe('finished');
+		expect(repo.getCase(created.id)?.board?.claims[0].kind).toBe('fact');
 		repo.close();
 	});
 

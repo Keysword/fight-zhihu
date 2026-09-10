@@ -1,11 +1,15 @@
 import { z } from 'zod';
 
 import { dormDemoEvidence } from '$lib/domain/demo-case';
-import { appendEvidenceInputSchema, createCaseInputSchema } from '$lib/domain/schemas';
+import {
+	appendEvidenceInputSchema,
+	confirmationKindSchema,
+	createCaseInputSchema
+} from '$lib/domain/schemas';
 import type { AgentEvent, CaseRecord } from '$lib/domain/types';
 import { redactText, type RedactionReplacement } from '$lib/privacy/redact';
 import { buildDormDemoFallback } from '$lib/server/agent/fallback';
-import type { AgentRunResult } from '$lib/server/agent/runtime';
+import { runErrorDetail, type AgentRunResult } from '$lib/server/agent/runtime';
 import { validateBoardForCase } from '$lib/server/agent/tools';
 import { CaseNotFoundError, type CaseRepository } from '$lib/server/cases/repository';
 
@@ -15,6 +19,7 @@ const serviceCreateSchema = createCaseInputSchema.extend({
 	replacements: z.array(replacementSchema).max(30).default([])
 });
 const serviceEvidenceSchema = appendEvidenceInputSchema.extend({
+	confirmation: confirmationKindSchema.default('self_reported'),
 	replacements: z.array(replacementSchema).max(30).default([])
 });
 const proposalReviewSchema = z
@@ -180,28 +185,32 @@ export function createCaseService(dependencies: {
 				kind: parsed.kind,
 				content: content.redacted,
 				sourceLabel: sourceLabel.redacted,
-				occurredAt: parsed.occurredAt
+				occurredAt: parsed.occurredAt,
+				confirmation: parsed.confirmation
 			});
 			repository.appendEvent(caseId, {
 				type: 'evidence.added',
 				payload: {
 					evidenceId: evidence.id,
 					kind: evidence.kind,
+					confirmation: evidence.confirmation,
 					redactionCount: content.findings.length + sourceLabel.findings.length
 				}
 			});
 			let run: AgentRunResult;
 			try {
 				run = await runner.run(caseId);
-			} catch {
+			} catch (error) {
+				const detail = runErrorDetail(error);
 				const current = requireCase(caseId);
 				repository.appendEvent(caseId, {
 					type: 'agent.run_failed',
-					payload: { summary: '证据已经保存，但 Agent 本轮暂时没有完成判断' }
+					payload: { title: detail.title, summary: detail.summary, suggestion: detail.suggestion }
 				});
 				run = {
 					outcome: 'failed',
 					summary: '证据已经保存，但 Agent 本轮暂时没有完成判断；可以稍后重新运行。',
+					error: detail,
 					turns: 0,
 					revision: current.revision
 				};

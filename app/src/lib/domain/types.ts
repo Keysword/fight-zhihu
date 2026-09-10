@@ -2,6 +2,7 @@ export type ClaimKind = 'fact' | 'statement' | 'inference' | 'unknown' | 'confli
 export type CaseStage = 'collecting' | 'understanding' | 'waiting' | 'actionable' | 'resolved';
 export type Confidence = 'low' | 'medium' | 'high';
 export type EvidenceKind = 'message' | 'email' | 'notice' | 'call' | 'note';
+export type ConfirmationKind = 'official' | 'self_reported';
 
 export interface Evidence {
 	id: string;
@@ -9,6 +10,7 @@ export interface Evidence {
 	content: string;
 	sourceLabel: string;
 	occurredAt: string | null;
+	confirmation: ConfirmationKind;
 }
 
 export interface Claim {
