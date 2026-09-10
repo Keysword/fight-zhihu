@@ -60,12 +60,35 @@ export class AgentProtocolError extends Error {
 	}
 }
 
+/**
+ * 从模型输出里取出第一个完整的 JSON 对象。
+ *
+ * 真实模型经常在合法 JSON 之后追一句解释，或者在前面加一句开场白。
+ * 只要动作对象本身完整，这类输出就应该被接受，而不是浪费一次修复回合。
+ * 扫描时跟踪字符串状态与转义，避免把字符串里的花括号当成对象边界。
+ */
 function extractJson(response: string): string {
-	const trimmed = response.trim();
-	if (trimmed.startsWith('{') && trimmed.endsWith('}')) return trimmed;
-	const fenced = trimmed.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```$/i);
-	if (fenced?.[1]) return fenced[1].trim();
-	throw new AgentProtocolError('模型输出不是单个 JSON 动作');
+	const start = response.indexOf('{');
+	if (start === -1) throw new AgentProtocolError('模型输出里没有 JSON 对象');
+	let depth = 0;
+	let inString = false;
+	let escaped = false;
+	for (let index = start; index < response.length; index += 1) {
+		const character = response[index];
+		if (inString) {
+			if (escaped) escaped = false;
+			else if (character === '\\') escaped = true;
+			else if (character === '"') inString = false;
+			continue;
+		}
+		if (character === '"') inString = true;
+		else if (character === '{') depth += 1;
+		else if (character === '}') {
+			depth -= 1;
+			if (depth === 0) return response.slice(start, index + 1);
+		}
+	}
+	throw new AgentProtocolError('模型输出的 JSON 对象没有闭合');
 }
 
 export function parseAgentAction(response: string): AgentAction {
