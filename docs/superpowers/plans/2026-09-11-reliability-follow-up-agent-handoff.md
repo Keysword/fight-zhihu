@@ -26,22 +26,22 @@
 
 ## 2. 文件职责
 
-| 文件（相对工作目录） | 本轮职责 |
-| --- | --- |
-| `app/src/lib/server/agent/tools.ts` | 事实支持判定、受限自动降级、最终复检 |
-| `app/src/lib/server/agent/tools.test.ts` | 否定、条件、来源及降级反例 |
-| `app/src/lib/server/agent/runtime.ts` | 修复、降级与终止分支；运行耗时事件 |
-| `app/src/lib/server/agent/runtime.test.ts` | 完整修复链与预算耗尽回归 |
-| `app/src/lib/server/agent/model-client.ts` | 如观测证明有必要，优化模型请求或会话开销 |
-| `app/src/lib/server/agent/model-client.test.ts` | 模型适配层修改的契约验证 |
-| `app/src/lib/server/agent/prompt.ts` | 如实验支持，减少无效轮次和冗余输出 |
-| `app/src/lib/server/agent/prompt.test.ts` | 提示约束相关回归 |
-| `app/src/lib/server/services/case-service.ts` | 核对失败与证据确认语义，不扩大服务职责 |
-| `app/src/lib/server/services/case-service.test.ts` | 如服务行为发生变化，补对应回归 |
-| `app/playwright.config.ts` | 浏览器测试使用独立临时数据目录 |
-| `app/tests/demo-case.spec.ts` | 确认、追加材料、待审更新交互回归 |
-| `docs/superpowers/reports/2026-09-10-线上可靠性治理报告.md` | 追加勘误，保留原始实测历史 |
-| `docs/superpowers/reports/2026-09-11-reliability-follow-up-results.md` | 本轮新增结果、限制与下一步 |
+| 文件（相对工作目录）                                                   | 本轮职责                                 |
+| ---------------------------------------------------------------------- | ---------------------------------------- |
+| `app/src/lib/server/agent/tools.ts`                                    | 事实支持判定、受限自动降级、最终复检     |
+| `app/src/lib/server/agent/tools.test.ts`                               | 否定、条件、来源及降级反例               |
+| `app/src/lib/server/agent/runtime.ts`                                  | 修复、降级与终止分支；运行耗时事件       |
+| `app/src/lib/server/agent/runtime.test.ts`                             | 完整修复链与预算耗尽回归                 |
+| `app/src/lib/server/agent/model-client.ts`                             | 如观测证明有必要，优化模型请求或会话开销 |
+| `app/src/lib/server/agent/model-client.test.ts`                        | 模型适配层修改的契约验证                 |
+| `app/src/lib/server/agent/prompt.ts`                                   | 如实验支持，减少无效轮次和冗余输出       |
+| `app/src/lib/server/agent/prompt.test.ts`                              | 提示约束相关回归                         |
+| `app/src/lib/server/services/case-service.ts`                          | 核对失败与证据确认语义，不扩大服务职责   |
+| `app/src/lib/server/services/case-service.test.ts`                     | 如服务行为发生变化，补对应回归           |
+| `app/playwright.config.ts`                                             | 浏览器测试使用独立临时数据目录           |
+| `app/tests/demo-case.spec.ts`                                          | 确认、追加材料、待审更新交互回归         |
+| `docs/superpowers/reports/2026-09-10-线上可靠性治理报告.md`            | 追加勘误，保留原始实测历史               |
+| `docs/superpowers/reports/2026-09-11-reliability-follow-up-results.md` | 本轮新增结果、限制与下一步               |
 
 ## 3. P0：先关闭事实与降级的正确性缺口
 
@@ -51,14 +51,14 @@
 
 - [ ] 在 `tools.test.ts` 使用已有 `record()`、`board()` 构造器，添加以下参数化反例。证据设为已确认，结论设为 `fact`，引用真实存在的证据 ID。
 
-| 证据正文 | 模型结论 | 预期 |
-| --- | --- | --- |
-| 不能领取钥匙 | 领取钥匙 | 拒绝 |
-| 并非已经分配房间 | 已经分配房间 | 拒绝 |
-| 如果审批通过，就可以领取钥匙 | 可以领取钥匙 | 拒绝 |
+| 证据正文                                   | 模型结论     | 预期 |
+| ------------------------------------------ | ------------ | ---- |
+| 不能领取钥匙                               | 领取钥匙     | 拒绝 |
+| 并非已经分配房间                           | 已经分配房间 | 拒绝 |
+| 如果审批通过，就可以领取钥匙               | 可以领取钥匙 | 拒绝 |
 | 有人问“房间已经分配”是否属实，目前尚未确认 | 房间已经分配 | 拒绝 |
-| 物业回复：房间已经分配，钥匙在前台领取。 | 房间已经分配 | 允许 |
-| 物业回复：房间尚未分配。 | 房间尚未分配 | 允许 |
+| 物业回复：房间已经分配，钥匙在前台领取。   | 房间已经分配 | 允许 |
+| 物业回复：房间尚未分配。                   | 房间尚未分配 | 允许 |
 
 - [ ] 运行定向测试，记录哪些反例在当前代码下误通过，不能只记录最终全绿。
 
