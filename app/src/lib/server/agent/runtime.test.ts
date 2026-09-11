@@ -328,8 +328,12 @@ describe('stateful agent runtime', () => {
 		expect(model.calls).toHaveLength(6);
 		const events = repo.listEvents(created.id);
 		expect(events.some((event) => event.type === 'agent.limit')).toBe(true);
-		expect(events.at(-1)?.type).toBe('agent.finished');
-		expect(events.at(-1)?.payload.outcome).toBe('partial');
+		const finished = events.find((event) => event.type === 'agent.finished');
+		expect(finished?.payload.outcome).toBe('partial');
+		// 每次运行最后都以一条 run.finished 收尾。
+		const runEvent = events.at(-1);
+		expect(runEvent?.type).toBe('run.finished');
+		expect(runEvent?.payload.outcome).toBe('partial');
 		repo.close();
 	});
 
@@ -347,6 +351,65 @@ describe('stateful agent runtime', () => {
 			createAgentRuntime({ repository: repo, model, zhihu }).run(created.id)
 		).rejects.toBeInstanceOf(AgentLimitError);
 		expect(repo.getCase(created.id)?.board).toBeNull();
+		repo.close();
+	});
+
+	// handoff task 3：预算耗尽时若确有本轮待审提案，必须把它交出来。
+	it('returns a real pending proposal with a partial run', async () => {
+		const repo = repository();
+		const created = repo.createCase({
+			title: '宿舍入住',
+			goal: '确认能否入住',
+			confusion: '没有房间号'
+		});
+		const evidence = repo.appendEvidence(created.id, {
+			kind: 'message',
+			content: '人力说以邮件为准',
+			sourceLabel: '人力',
+			occurredAt: null
+		});
+		repo.saveBoard(created.id, 0, validBoard(created.id, evidence.id));
+		const staged = validBoard(created.id, evidence.id);
+		staged.currentBlocker = '等待正式邮件到达';
+		const model = scriptedModel([
+			JSON.stringify({ type: 'propose_board_patch', board: staged, summary: '等待正式回复' })
+		]);
+		const zhihu = { searchZhihu: vi.fn(async () => []), searchGlobal: vi.fn(async () => []) };
+
+		const result = await createAgentRuntime({ repository: repo, model, zhihu }).run(created.id);
+
+		expect(result.outcome).toBe('partial');
+		expect(result.proposedBoard?.currentBlocker).toBe('等待正式邮件到达');
+		// 必须是真的持久化了待审提案，而不是把已生效的旧板当成提案。
+		expect(repo.getCase(created.id)?.pendingBoard?.currentBlocker).toBe('等待正式邮件到达');
+		expect(repo.getCase(created.id)?.board?.currentBlocker).toBe('房间号尚未确认');
+		expect(repo.getCase(created.id)?.pendingBoard ?? null).not.toBeNull();
+		repo.close();
+	});
+
+	// 没有新提案就结束的运行，绝不能把旧板当作待审提案交出来。
+	it('never returns the existing board as a proposal when no new one was staged', async () => {
+		const repo = repository();
+		const created = repo.createCase({
+			title: '宿舍入住',
+			goal: '确认能否入住',
+			confusion: '没有房间号'
+		});
+		const evidence = repo.appendEvidence(created.id, {
+			kind: 'message',
+			content: '人力说以邮件为准',
+			sourceLabel: '人力',
+			occurredAt: null
+		});
+		repo.saveBoard(created.id, 0, validBoard(created.id, evidence.id));
+		const model = scriptedModel(['{"type":"finish","summary":"本轮没有新进展"}']);
+		const zhihu = { searchZhihu: vi.fn(async () => []), searchGlobal: vi.fn(async () => []) };
+
+		const result = await createAgentRuntime({ repository: repo, model, zhihu }).run(created.id);
+
+		expect(result.outcome).toBe('finished');
+		expect(result.proposedBoard).toBeUndefined();
+		expect(repo.getCase(created.id)?.pendingBoard ?? null).toBeNull();
 		repo.close();
 	});
 
@@ -405,10 +468,16 @@ describe('stateful agent runtime', () => {
 			createAgentRuntime({ repository: repo, model, zhihu }).run(created.id)
 		).rejects.toBeInstanceOf(AgentSafetyError);
 		expect(model.calls).toHaveLength(2);
-		const last = repo.listEvents(created.id).at(-1);
-		expect(last?.type).toBe('agent.error');
-		expect(last?.payload.category).toBe('safety');
-		expect(String(last?.payload.reason)).toContain('不属于本案例的证据');
+		const events = repo.listEvents(created.id);
+		const safetyError = events.find(
+			(event) => event.type === 'agent.error' && event.payload.category === 'safety'
+		);
+		expect(safetyError).toBeDefined();
+		expect(String(safetyError?.payload.reason)).toContain('不属于本案例的证据');
+		// 失败也要有可归属的结束记录。
+		expect(events.at(-1)?.type).toBe('run.finished');
+		expect(events.at(-1)?.payload.outcome).toBe('failed');
+		expect(events.at(-1)?.payload.failure).toBe('SAFETY_REJECTED');
 		repo.close();
 	});
 
@@ -611,5 +680,98 @@ describe('run error classification', () => {
 		expect(detail.title).toBe('模型输出未通过安全校验');
 		expect(detail.code).toBe('SAFETY_REJECTED');
 		expect(detail.summary).toContain('必须引用正式通知');
+	});
+});
+
+describe('run observation', () => {
+	/** 可控单调时钟：每次读取推进 100，避免真实等待。 */
+	function steppingClock() {
+		let tick = 0;
+		return () => (tick += 100);
+	}
+
+	it('records how many model calls happened, what they cost, and why the run ended', async () => {
+		const repo = repository();
+		const created = repo.createCase({
+			title: '宿舍入住',
+			goal: '确认能否入住',
+			confusion: '不清楚'
+		});
+		const evidence = repo.appendEvidence(created.id, {
+			kind: 'message',
+			content: '人力说以邮件为准',
+			sourceLabel: '人力',
+			occurredAt: null
+		});
+		const board = validBoard(created.id, evidence.id);
+		const model = scriptedModel([
+			JSON.stringify({ type: 'search_zhihu', query: '新人入住', count: 1 }),
+			JSON.stringify({ type: 'propose_board_patch', board, summary: '整理' }),
+			'{"type":"finish","summary":"完成"}'
+		]);
+		const zhihu = { searchZhihu: vi.fn(async () => []), searchGlobal: vi.fn(async () => []) };
+
+		await createAgentRuntime({
+			repository: repo,
+			model,
+			zhihu,
+			now: steppingClock()
+		}).run(created.id);
+
+		const runEvent = repo.listEvents(created.id).at(-1);
+		expect(runEvent?.type).toBe('run.finished');
+		const payload = runEvent?.payload as {
+			runId: string;
+			outcome: string;
+			totalMs: number;
+			modelCallCount: number;
+			modelCalls: Array<{
+				index: number;
+				durationMs: number;
+				actionType: string | null;
+				parsed: boolean;
+			}>;
+			hasNextAction: boolean;
+		};
+		expect(payload.outcome).toBe('finished');
+		expect(payload.runId).toMatch(/[0-9a-f-]{36}/);
+		expect(payload.modelCallCount).toBe(3);
+		expect(payload.modelCalls).toHaveLength(3);
+		expect(payload.modelCalls.map((call) => call.actionType)).toEqual([
+			'search_zhihu',
+			'propose_board_patch',
+			'finish'
+		]);
+		expect(payload.modelCalls.every((call) => call.parsed)).toBe(true);
+		// 时钟每次推进 100，因此每次调用耗时 100。
+		expect(payload.modelCalls.every((call) => call.durationMs === 100)).toBe(true);
+		expect(payload.totalMs).toBeGreaterThan(0);
+		expect(payload.hasNextAction).toBe(true);
+		repo.close();
+	});
+
+	it('records an attributable end for a failed run', async () => {
+		const repo = repository();
+		const created = repo.createCase({
+			title: '宿舍入住',
+			goal: '确认能否入住',
+			confusion: '不清楚'
+		});
+		const model = scriptedModel(['我不会输出 JSON。', '我还是不输出 JSON。']);
+		const zhihu = { searchZhihu: vi.fn(async () => []), searchGlobal: vi.fn(async () => []) };
+
+		await expect(
+			createAgentRuntime({ repository: repo, model, zhihu, now: steppingClock() }).run(created.id)
+		).rejects.toBeInstanceOf(AgentProtocolError);
+
+		const runEvent = repo.listEvents(created.id).at(-1);
+		expect(runEvent?.type).toBe('run.finished');
+		expect(runEvent?.payload.outcome).toBe('failed');
+		expect(runEvent?.payload.failure).toBe('AGENT_PROTOCOL_REJECTED');
+		expect(runEvent?.payload.repairCount).toBe(1);
+		const calls = runEvent?.payload.modelCalls as Array<{ parsed: boolean; actionType: null }>;
+		expect(calls).toHaveLength(2);
+		expect(calls.every((call) => !call.parsed)).toBe(true);
+		repo.close();
 	});
 });
