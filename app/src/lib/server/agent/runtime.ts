@@ -210,9 +210,10 @@ export function createAgentRuntime(dependencies: RuntimeDependencies) {
 				return result;
 			}
 
-			if (!model) return recordRun(await useDemoFallback(caseId, new ModelConfigurationError()));
-
 			try {
+				// 未配置模型也属于一次运行，失败时同样要留下可归属的结束记录。
+				if (!model) return recordRun(await useDemoFallback(caseId, new ModelConfigurationError()));
+
 				for (let turn = 1; turn <= MAX_TURNS; turn += 1) {
 					let rawAction: string;
 					const callIndex = modelCalls.length + 1;

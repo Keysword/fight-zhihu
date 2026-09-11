@@ -1,28 +1,19 @@
-import { readdirSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { rmSync } from 'node:fs';
+
+import type { FullConfig } from '@playwright/test';
 
 const PREFIX = 'background-board-e2e-';
 
 /**
- * 删除本轮端到端测试使用的临时数据目录。
+ * 只删除本轮创建的确切数据目录。
  *
- * 只在系统临时目录里按固定前缀匹配，不触碰其它路径；这样即使 teardown
- * 拿不到配置进程的环境变量，也不会留下残留。
+ * 路径由 playwright.config.ts 放进 metadata，而不是按前缀扫描临时目录：
+ * 并行运行多个端到端任务时，扫描会把另一个进程仍在使用的数据库一起删掉。
+ * 也不用环境变量向 teardown 传路径——实测 teardown 进程里该变量为空。
  */
-export default function globalTeardown(): void {
-	const explicit = process.env.BACKGROUND_BOARD_E2E_DATA_DIR;
-	const targets = new Set<string>();
-	if (explicit) targets.add(explicit);
-	try {
-		for (const entry of readdirSync(tmpdir())) {
-			if (entry.startsWith(PREFIX)) targets.add(join(tmpdir(), entry));
-		}
-	} catch {
-		// 临时目录不可读时只依赖显式路径，不影响测试结论。
-	}
-	for (const target of targets) {
-		if (!target.includes(PREFIX)) continue;
-		rmSync(target, { recursive: true, force: true });
-	}
+export default function globalTeardown(config: FullConfig): void {
+	const directory = (config.metadata as { e2eDataDirectory?: string }).e2eDataDirectory;
+	// 双重保险：只接受自己创建的那类路径，避免配置被改动后误删其它目录。
+	if (!directory || !directory.includes(PREFIX)) return;
+	rmSync(directory, { recursive: true, force: true });
 }

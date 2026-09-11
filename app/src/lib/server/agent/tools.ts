@@ -33,14 +33,15 @@ function compact(text: string): string {
 	return text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
 }
 
-/** 句子边界：条件可能落在前一分句，因此条件词按整句判定。 */
-const SENTENCE_SEPARATORS = /[。；！？\n\r]+/;
-/** 分句边界：把否定、疑问、未确认限定在它们实际作用的那一段里。 */
-const CLAUSE_SEPARATORS = /[。；！？，,、：:\n\r]+/;
+/**
+ * 句子边界：否定、疑问与条件都按整句判定，顿号属于并列而非作用域边界。
+ * 捕获组用于在切分时保留终止标点，否则“房间已经分配？”的问号会丢失。
+ */
+const SENTENCE_BOUNDARY = /([。；！？\n\r]+)/;
 
 /**
- * 否定与排除词：只在该分句范围内判定。
- * 若按整句判定，“不能领取钥匙，但可以进入园区”会误伤后半句这个独立断言。
+ * 否定与排除词：在结论覆盖到的整句范围内判定。
+ * 范围取整句而不是分句，是因为“禁止领取钥匙、领取门禁卡”里的禁止覆盖并列的两项。
  */
 const NEGATION_MARKERS = [
 	'尚未',
@@ -64,8 +65,10 @@ const NEGATION_MARKERS = [
 /** 条件词：条件可以出现在前一分句，所以按整句判定。 */
 const CONDITION_MARKERS = ['如果', '若', '假如', '倘若', '一旦', '除非', '要是', '假设'];
 
-/** 疑问与未确认转述：这类语境里的片段不构成独立断言。 */
+/** 疑问与未确认转述：这类语境里的片段不构成独立断言。问号只在原文 raw 里可见。 */
 const UNCERTAIN_MARKERS = [
+	'？',
+	'?',
 	'是否',
 	'吗',
 	'据说',
@@ -105,104 +108,124 @@ const ATTRIBUTION_VERBS = [
 
 interface TextUnit {
 	text: string;
+	/** 原文片段（保留标点）：问号等语义标记只在原文里可见。 */
+	raw: string;
 	start: number;
 	end: number;
 }
 
 /**
- * 按分隔符把原文切成单元，并记录每个单元在“去标点串”中的区间。
- * 这样既能把否定限定在分句内，又能判断结论横跨了哪些分句。
+ * 句级单元：把终止标点保留在 raw 里，否则“房间已经分配？”的问号会随分割丢失。
  */
-function layeredUnits(text: string, separators: RegExp): TextUnit[] {
-	const parts = text
-		.split(separators)
-		.map((part) => compact(part))
-		.filter((part) => part.length > 0);
+function sentenceUnits(text: string): TextUnit[] {
+	const parts = text.split(SENTENCE_BOUNDARY);
 	let offset = 0;
-	return parts.map((part) => {
-		const unit = { text: part, start: offset, end: offset + part.length };
-		offset += part.length;
-		return unit;
-	});
+	const units: TextUnit[] = [];
+	for (let index = 0; index < parts.length; index += 2) {
+		const body = parts[index] ?? '';
+		const terminator = parts[index + 1] ?? '';
+		const packed = compact(body);
+		if (packed.length === 0) continue;
+		units.push({
+			text: packed,
+			raw: body + terminator,
+			start: offset,
+			end: offset + packed.length
+		});
+		offset += packed.length;
+	}
+	return units;
+}
+
+interface Candidate {
+	/** 用于在原文里定位的连续文字。 */
+	span: string;
+	/** 被剥离的归属前缀；无剥离时为空串。 */
+	prefix: string;
 }
 
 /**
  * 结论的候选匹配串。
  *
  * 逐字引用原文是最常见也最安全的写法；其次是加上“某某表示：”这类出处前缀。
- * 后者只剥离归属说明，被引内容仍须逐字出现在原文里并通过作用域检查。
+ * 后者只剥离归属说明，且前缀必须真的出现在被引证据里——否则“物业说”会被
+ * 改写成“财务表示”，归属就被伪造了。
  */
-function candidateSpans(claimText: string): string[] {
+function candidateSpans(claimText: string): Candidate[] {
 	const claim = compact(claimText);
-	const candidates = [claim];
+	const candidates: Candidate[] = [{ span: claim, prefix: '' }];
 	for (const verb of ATTRIBUTION_VERBS) {
 		const marker = compact(verb);
 		const at = claim.indexOf(marker);
 		if (at <= 0) continue;
-		const rest = claim.slice(at + marker.length);
-		if (rest.length >= 2) candidates.push(rest);
+		const span = claim.slice(at + marker.length);
+		const prefix = claim.slice(0, at);
+		if (span.length < 2 || prefix.length === 0) continue;
+		candidates.push({ span, prefix });
 	}
 	return candidates;
 }
 
 /**
- * 在证据原文里寻找一段能支撑该结论的独立断言。
+ * 在证据原文里寻找一段能支撑该结论的独立断言，并返回实际支持它的证据。
  *
  * 结论必须作为原文中一段连续文字出现，且不能是从否定、疑问、条件或未确认
- * 转述的范围里截取出来的肯定片段。这是一个保守的确定性规则，不声称解决了
- * 任意自然语言语义：拿不准的复杂语境一律拒绝。
+ * 转述的范围里截取出来的肯定片段。否定与疑问按**整句**判定：顿号是并列而
+ * 不是作用域边界（“禁止领取钥匙、领取门禁卡”中的禁止覆盖两项）。这是一个
+ * 保守的确定性规则，不声称解决任意自然语言语义：拿不准的语境一律拒绝。
  */
 function findScopedSupport(
 	claimText: string,
 	evidenceList: Evidence[]
-): { ok: true } | { problem: string } {
+): { ok: true; evidenceId: string } | { problem: string } {
 	const candidates = candidateSpans(claimText);
-	if (candidates[0].length < 2) return { problem: '结论过短，无法与原文核对' };
+	if (candidates[0].span.length < 2) return { problem: '结论过短，无法与原文核对' };
 	let unsafeScope: string | null = null;
+	let unconfirmedSupport: string | null = null;
 	for (const evidence of evidenceList) {
 		const compactEvidence = compact(evidence.content);
-		const clauses = layeredUnits(evidence.content, CLAUSE_SEPARATORS);
-		const sentences = layeredUnits(evidence.content, SENTENCE_SEPARATORS);
+		const sentences = sentenceUnits(evidence.content);
 		for (const candidate of candidates) {
-			const at = compactEvidence.indexOf(candidate);
-			if (at === -1) continue;
-			const end = at + candidate.length;
-			// 结论可能横跨多个分句（例如逐字引用整条证据），逐个检查被覆盖的分句。
-			const clauseMarker = clauses
-				.filter((unit) => unit.start < end && unit.end > at)
-				.flatMap((unit) =>
-					[...NEGATION_MARKERS, ...UNCERTAIN_MARKERS].filter(
-						(marker) => unit.text.includes(marker) && !candidate.includes(marker)
-					)
-				)[0];
-			if (clauseMarker) {
-				unsafeScope = `不能从否定、疑问或未确认的表述中截取（“${clauseMarker}”）`;
+			if (candidate.prefix && !compactEvidence.includes(candidate.prefix)) {
+				unsafeScope = `归属前缀“${candidate.prefix}”没有出现在引用证据里`;
 				continue;
 			}
-			// 条件可能落在前一分句，因此按结论覆盖到的整句判定。
-			const conditionMarker = sentences
-				.filter((unit) => unit.start < end && unit.end > at)
-				.flatMap((unit) =>
-					CONDITION_MARKERS.filter(
-						(marker) => unit.text.includes(marker) && !candidate.includes(marker)
-					)
-				)[0];
+			const at = compactEvidence.indexOf(candidate.span);
+			if (at === -1) continue;
+			const end = at + candidate.span.length;
+			const covered = sentences.filter((unit) => unit.start < end && unit.end > at);
+			const scopeMarker = [...NEGATION_MARKERS, ...UNCERTAIN_MARKERS].find(
+				(marker) =>
+					covered.some((unit) => unit.text.includes(marker) || unit.raw.includes(marker)) &&
+					!candidate.span.includes(marker)
+			);
+			if (scopeMarker) {
+				unsafeScope = `不能从否定、疑问或未确认的表述中截取（“${scopeMarker}”）`;
+				continue;
+			}
+			const conditionMarker = CONDITION_MARKERS.find(
+				(marker) =>
+					covered.some((unit) => unit.text.includes(marker)) && !candidate.span.includes(marker)
+			);
 			if (conditionMarker) {
 				unsafeScope = `不能从条件句里截取（“${conditionMarker}”）`;
 				continue;
 			}
-			return { ok: true };
+			// 已确认的证据优先；否则先记下，等所有证据都试完再决定。
+			if (isConfirmedEvidence(evidence)) return { ok: true, evidenceId: evidence.id };
+			unconfirmedSupport ??= evidence.id;
 		}
 	}
+	if (unconfirmedSupport) return { ok: true, evidenceId: unconfirmedSupport };
 	return { problem: unsafeScope ?? '原文里没有出现这段连续文字' };
 }
 
 /**
  * 结构化判定一条 fact 是否成立；成立时返回 null。
  *
- * 顺序很重要：先确认原文确实表达了这个内容（内容支持），再看引用证据是否
- * 得到正式确认（来源）。这样“来源未确认”就不会被用来保留一条原文从未说过的
- * 结论——那正是自动降级最容易被滥用的地方。
+ * 三条都必须成立：内容确实出自某条引用证据、该证据本身已确认、结论没有引入
+ * 原文没有的否定或疑问。第一与第二条必须落在**同一条证据**上——否则“未确认
+ * 证据提供内容 + 另一条已确认证据提供确认”就能拼出一条事实。
  */
 export function evaluateFactSupport(
 	claim: BackgroundBoard['claims'][number],
@@ -216,7 +239,6 @@ export function evaluateFactSupport(
 			message: `已确认事实“${claim.text}”引用了不存在或不属于本案例的证据`
 		};
 	}
-	// 内容支持必须不依赖来源确认：即使证据尚未被确认，也要先证明原文确实这么写。
 	const content = findScopedSupport(claim.text, cited);
 	if ('problem' in content) {
 		return {
@@ -224,7 +246,26 @@ export function evaluateFactSupport(
 			message: `引用证据没有支持“${claim.text}”：${content.problem}`
 		};
 	}
-	if (!cited.some(isConfirmedEvidence)) {
+	const supporter = cited.find((evidence) => evidence.id === content.evidenceId);
+	if (!supporter) {
+		return {
+			kind: 'invalid_evidence_reference',
+			message: `已确认事实“${claim.text}”引用了不存在或不属于本案例的证据`
+		};
+	}
+	// 结论不得引入支持证据里没有的否定或疑问（例如把“物业说”写成“物业没有说”）。
+	const claimCompact = compact(claim.text);
+	const evidenceCompact = compact(supporter.content);
+	const addedMarker = [...NEGATION_MARKERS, ...UNCERTAIN_MARKERS].find(
+		(marker) => claimCompact.includes(marker) && !evidenceCompact.includes(marker)
+	);
+	if (addedMarker) {
+		return {
+			kind: 'content_unsupported',
+			message: `引用证据没有支持“${claim.text}”：结论包含原文没有的否定或疑问（“${addedMarker}”）`
+		};
+	}
+	if (!isConfirmedEvidence(supporter)) {
 		return {
 			kind: 'source_unconfirmed',
 			message: `已确认事实“${claim.text}”必须引用正式通知，或引用用户标记为已确认的证据`

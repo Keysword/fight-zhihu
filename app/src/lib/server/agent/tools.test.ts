@@ -126,6 +126,69 @@ describe('fact source-span validation (handoff task 1)', () => {
 	}
 });
 
+describe('fact support must not be assembled or re-attributed (review round 2)', () => {
+	function withEvidence(
+		items: Array<{ id: string; content: string; confirmation: 'official' | 'self_reported' }>
+	) {
+		const caseRecord = record();
+		for (const item of items) {
+			caseRecord.evidence.push({
+				id: item.id,
+				kind: 'message',
+				content: item.content,
+				sourceLabel: item.id,
+				occurredAt: null,
+				confirmation: item.confirmation
+			});
+		}
+		return caseRecord;
+	}
+
+	function fact(text: string, evidenceIds: string[]): BackgroundBoard['claims'][number] {
+		return { id: 'claim-fact', kind: 'fact', text, evidenceIds };
+	}
+
+	// 内容来自未确认证据、确认来自另一条证据 —— 不能拼成事实。
+	it('does not combine content from one evidence with confirmation from another', () => {
+		const caseRecord = withEvidence([
+			{ id: 'unconfirmed-room', content: '房间已经分配', confirmation: 'self_reported' },
+			{ id: 'confirmed-other', content: '请先联系物业', confirmation: 'official' }
+		]);
+		const proposed = board();
+		proposed.claims[0] = fact('房间已经分配', ['unconfirmed-room', 'confirmed-other']);
+		expect(() => validateBoardForCase(proposed, caseRecord, [])).toThrow(AgentSafetyError);
+	});
+
+	// 归属前缀不得改变说话人，也不得引入原文没有的否定。
+	it('does not let an attribution prefix invert or re-attribute the source', () => {
+		const caseRecord = withEvidence([
+			{ id: 'property-said', content: '物业说房间已经分配', confirmation: 'official' }
+		]);
+		for (const text of ['物业没有说房间已经分配', '财务表示：房间已经分配']) {
+			const proposed = board();
+			proposed.claims[0] = fact(text, ['property-said']);
+			expect(() => validateBoardForCase(proposed, caseRecord, [])).toThrow(AgentSafetyError);
+		}
+	});
+
+	// 顿号与问号是语义边界，不能被当成否定/疑问作用域的结束。
+	it('keeps prohibition and question scope intact', () => {
+		const prohibition = withEvidence([
+			{ id: 'ban', content: '禁止领取钥匙、领取门禁卡', confirmation: 'official' }
+		]);
+		const prohibited = board();
+		prohibited.claims[0] = fact('领取门禁卡', ['ban']);
+		expect(() => validateBoardForCase(prohibited, prohibition, [])).toThrow(AgentSafetyError);
+
+		const question = withEvidence([
+			{ id: 'ask', content: '房间已经分配？', confirmation: 'official' }
+		]);
+		const asked = board();
+		asked.claims[0] = fact('房间已经分配', ['ask']);
+		expect(() => validateBoardForCase(asked, question, [])).toThrow(AgentSafetyError);
+	});
+});
+
 describe('board safety validation', () => {
 	it('requires external clues to be byte-for-byte tool results', () => {
 		const proposed = board();

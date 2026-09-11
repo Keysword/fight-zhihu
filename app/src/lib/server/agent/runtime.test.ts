@@ -774,4 +774,26 @@ describe('run observation', () => {
 		expect(calls.every((call) => !call.parsed)).toBe(true);
 		repo.close();
 	});
+
+	// 未配置模型也要留下结束记录：它同样是一次用户触发的运行。
+	it('records an end event when no model is configured', async () => {
+		const repo = repository();
+		const created = repo.createCase({
+			title: '宿舍入住',
+			goal: '确认能否入住',
+			confusion: '不清楚'
+		});
+		const zhihu = { searchZhihu: vi.fn(async () => []), searchGlobal: vi.fn(async () => []) };
+
+		await expect(
+			createAgentRuntime({ repository: repo, model: null, zhihu }).run(created.id)
+		).rejects.toBeInstanceOf(ModelConfigurationError);
+
+		const runEvent = repo.listEvents(created.id).at(-1);
+		expect(runEvent?.type).toBe('run.finished');
+		expect(runEvent?.payload.outcome).toBe('failed');
+		expect(runEvent?.payload.failure).toBe('MODEL_NOT_CONFIGURED');
+		expect(runEvent?.payload.modelCallCount).toBe(0);
+		repo.close();
+	});
 });
