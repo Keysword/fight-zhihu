@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { dormDemoBoard, dormDemoEvidence } from '$lib/domain/demo-case';
 import type { BackgroundBoard, CaseRecord, ExternalClue } from '$lib/domain/types';
-import { AgentSafetyError, downgradeUnsupportedFacts, validateBoardForCase } from './tools';
+import {
+	AgentSafetyError,
+	downgradeUnsupportedFacts,
+	evaluateFactSupport,
+	validateBoardForCase
+} from './tools';
 
 function record(board: BackgroundBoard | null = null): CaseRecord {
 	return {
@@ -33,6 +38,67 @@ const clue: ExternalClue = {
 	warning: '外部经验，仅供核实'
 };
 
+describe('fact source-span validation (handoff task 1)', () => {
+	/**
+	 * 结论必须是证据原文中一段独立的断言，不能从否定、条件、疑问或
+	 * 未确认转述的范围里截取肯定片段。
+	 */
+	const cases: Array<{ evidence: string; claim: string; allowed: boolean; note: string }> = [
+		{ evidence: '不能领取钥匙', claim: '领取钥匙', allowed: false, note: '从否定中截取' },
+		{ evidence: '并非已经分配房间', claim: '已经分配房间', allowed: false, note: '从否定中截取' },
+		{
+			evidence: '如果审批通过，就可以领取钥匙',
+			claim: '可以领取钥匙',
+			allowed: false,
+			note: '从条件句中截取'
+		},
+		{
+			evidence: '有人问“房间已经分配”是否属实，目前尚未确认',
+			claim: '房间已经分配',
+			allowed: false,
+			note: '从未确认转述中截取'
+		},
+		{
+			evidence: '物业回复：房间已经分配，钥匙在前台领取。',
+			claim: '房间已经分配',
+			allowed: true,
+			note: '独立肯定断言'
+		},
+		{
+			evidence: '物业回复：房间尚未分配。',
+			claim: '房间尚未分配',
+			allowed: true,
+			note: '独立否定断言'
+		}
+	];
+
+	for (const { evidence, claim, allowed, note } of cases) {
+		it(`${allowed ? 'allows' : 'rejects'} “${claim}” (${note})`, () => {
+			const caseRecord = record();
+			caseRecord.evidence.push({
+				id: 'confirmed-source',
+				kind: 'message',
+				content: evidence,
+				sourceLabel: '物业',
+				occurredAt: null,
+				confirmation: 'official'
+			});
+			const proposed = board();
+			proposed.claims[0] = {
+				id: 'claim-fact',
+				kind: 'fact',
+				text: claim,
+				evidenceIds: ['confirmed-source']
+			};
+			if (allowed) {
+				expect(() => validateBoardForCase(proposed, caseRecord, [])).not.toThrow();
+			} else {
+				expect(() => validateBoardForCase(proposed, caseRecord, [])).toThrow(AgentSafetyError);
+			}
+		});
+	}
+});
+
 describe('board safety validation', () => {
 	it('requires external clues to be byte-for-byte tool results', () => {
 		const proposed = board();
@@ -41,10 +107,11 @@ describe('board safety validation', () => {
 	});
 	it('allows facts only when an official notice directly supports the claim', () => {
 		const proposed = board();
+		// 内容确实出自这条证据，但该证据只是聊天记录，来源未经确认。
 		proposed.claims[0] = {
 			id: 'claim-fact',
 			kind: 'fact',
-			text: '房间已经分配',
+			text: '应该可以提前入住',
 			evidenceIds: ['evidence-contact']
 		};
 		expect(() => validateBoardForCase(proposed, record(), [])).toThrow(/正式通知/);
@@ -58,9 +125,10 @@ describe('board safety validation', () => {
 			confirmation: 'official'
 		});
 		proposed.claims[0].evidenceIds = ['official-notice'];
+		proposed.claims[0].text = '房间已经分配';
 		expect(() => validateBoardForCase(proposed, caseRecord, [])).not.toThrow();
 		proposed.claims[0].text = '工资已经到账';
-		expect(() => validateBoardForCase(proposed, caseRecord, [])).toThrow(/没有包含完整/);
+		expect(() => validateBoardForCase(proposed, caseRecord, [])).toThrow(/引用证据没有支持/);
 	});
 	it('does not let a fact smuggle in a contradiction the evidence never stated', () => {
 		const caseRecord = record();
@@ -110,7 +178,7 @@ describe('board safety validation', () => {
 		proposed.claims[0] = {
 			id: 'claim-fact',
 			kind: 'fact',
-			text: '房间已经分配',
+			text: '应该可以提前入住',
 			evidenceIds: ['evidence-contact']
 		};
 		expect(() => validateBoardForCase(proposed, caseRecord, [])).toThrow(/用户标记为已确认/);
@@ -126,14 +194,14 @@ describe('board safety validation', () => {
 });
 
 describe('fact downgrade fallback', () => {
-	// 模型改不动时产品要兜底：保留信息，但不冒充已确认事实。
-	it('rewrites an unsupported fact as a statement instead of failing the run', () => {
+	// 内容有依据、只是来源未确认时，保留信息但降级确定性。
+	it('rewrites a source-unconfirmed fact as a statement instead of failing the run', () => {
 		const caseRecord = record();
 		const proposed = board();
 		proposed.claims[0] = {
 			id: 'claim-fact',
 			kind: 'fact',
-			text: '同事说以邮件为准',
+			text: '应该可以提前入住',
 			evidenceIds: ['evidence-contact']
 		};
 		expect(() => validateBoardForCase(proposed, caseRecord, [])).toThrow(AgentSafetyError);
@@ -145,9 +213,47 @@ describe('fact downgrade fallback', () => {
 		expect(downgrades[0].reason).toContain('必须引用正式通知');
 		expect(downgraded.claims[0].kind).toBe('statement');
 		// 信息本身必须保留，只降级它的确定性。
-		expect(downgraded.claims[0].text).toBe('同事说以邮件为准');
+		expect(downgraded.claims[0].text).toBe('应该可以提前入住');
 		expect(downgraded.claims[0].rationale).toContain('暂按他人说法记录');
 		expect(() => validateBoardForCase(downgraded, caseRecord, [])).not.toThrow();
+	});
+
+	// 原文从未说过的内容，绝不允许借降级保留为“他人说法”。
+	it('never downgrades content the evidence does not support', () => {
+		const caseRecord = record();
+		const proposed = board();
+		proposed.claims[0] = {
+			id: 'claim-fact',
+			kind: 'fact',
+			text: '房间已经分配',
+			evidenceIds: ['evidence-contact']
+		};
+		const { downgrades } = downgradeUnsupportedFacts(proposed, caseRecord);
+		expect(downgrades).toHaveLength(0);
+		expect(() => validateBoardForCase(proposed, caseRecord, [])).toThrow(AgentSafetyError);
+	});
+
+	// 删掉否定后，即使来源已确认也不能降级放行。
+	it('never downgrades a claim that inverts a confirmed negation', () => {
+		const caseRecord = record();
+		caseRecord.evidence.push({
+			id: 'confirmed-negative',
+			kind: 'message',
+			content: '物业：不能领取钥匙。',
+			sourceLabel: '物业',
+			occurredAt: null,
+			confirmation: 'official'
+		});
+		const proposed = board();
+		proposed.claims[0] = {
+			id: 'claim-fact',
+			kind: 'fact',
+			text: '领取钥匙',
+			evidenceIds: ['confirmed-negative']
+		};
+		const { downgrades } = downgradeUnsupportedFacts(proposed, caseRecord);
+		expect(downgrades).toHaveLength(0);
+		expect(() => validateBoardForCase(proposed, caseRecord, [])).toThrow(AgentSafetyError);
 	});
 
 	it('leaves facts that do have confirmed evidence untouched', () => {
@@ -170,5 +276,29 @@ describe('fact downgrade fallback', () => {
 		const { board: downgraded, downgrades } = downgradeUnsupportedFacts(proposed, caseRecord);
 		expect(downgrades).toHaveLength(0);
 		expect(downgraded.claims[0].kind).toBe('fact');
+	});
+
+	// 失败说明必须对应真实原因：来源已确认但内容不成立时，不能说“缺少正式确认”。
+	it('reports the content problem, not a missing confirmation, when the source is confirmed', () => {
+		const caseRecord = record();
+		caseRecord.evidence.push({
+			id: 'confirmed-source',
+			kind: 'message',
+			content: '物业：请联系前台。',
+			sourceLabel: '物业',
+			occurredAt: null,
+			confirmation: 'official'
+		});
+		const proposed = board();
+		proposed.claims[0] = {
+			id: 'claim-fact',
+			kind: 'fact',
+			text: '房间已经分配',
+			evidenceIds: ['confirmed-source']
+		};
+		const issue = evaluateFactSupport(proposed.claims[0], caseRecord);
+		expect(issue?.kind).toBe('content_unsupported');
+		expect(issue?.message).not.toContain('必须引用正式通知');
+		expect(issue?.message).toContain('没有支持');
 	});
 });

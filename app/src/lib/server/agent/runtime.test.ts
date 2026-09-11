@@ -412,7 +412,7 @@ describe('stateful agent runtime', () => {
 		repo.close();
 	});
 
-	it('downgrades an unsupported fact instead of failing the whole run', async () => {
+	it('downgrades a source-unconfirmed fact instead of failing the whole run', async () => {
 		const repo = repository();
 		const created = repo.createCase({
 			title: '宿舍入住',
@@ -425,7 +425,7 @@ describe('stateful agent runtime', () => {
 			sourceLabel: '人力',
 			occurredAt: null
 		});
-		// 模型把只由聊天记录支撑的信息写成 fact，且连续两次都改不动。
+		// 内容确实出自这条证据，只是该证据尚未被确认；模型连续两次都写成 fact。
 		const board = validBoard(created.id, evidence.id);
 		board.claims[0] = {
 			id: 'claim-1',
@@ -451,6 +451,44 @@ describe('stateful agent runtime', () => {
 		expect(
 			repo.listEvents(created.id).some((event) => event.type === 'agent.fact_downgraded')
 		).toBe(true);
+		repo.close();
+	});
+
+	// 原文从未说过的内容不能被降级保留：整轮必须失败，且不得写入错误板。
+	it('fails the run and writes no board when the fact content is unsupported', async () => {
+		const repo = repository();
+		const created = repo.createCase({
+			title: '宿舍入住',
+			goal: '确认能否入住',
+			confusion: '不清楚'
+		});
+		const evidence = repo.appendEvidence(created.id, {
+			kind: 'message',
+			content: '人力说以邮件为准',
+			sourceLabel: '人力',
+			occurredAt: null
+		});
+		const board = validBoard(created.id, evidence.id);
+		// 证据里没有“房间已经分配”，模型却据此写成已确认事实。
+		board.claims[0] = {
+			id: 'claim-1',
+			kind: 'fact',
+			text: '房间已经分配',
+			evidenceIds: [evidence.id]
+		};
+		const model = scriptedModel([
+			JSON.stringify({ type: 'propose_board_patch', board, summary: '记录事实' }),
+			JSON.stringify({ type: 'propose_board_patch', board, summary: '再次记录事实' })
+		]);
+		const zhihu = { searchZhihu: vi.fn(async () => []), searchGlobal: vi.fn(async () => []) };
+
+		await expect(
+			createAgentRuntime({ repository: repo, model, zhihu }).run(created.id)
+		).rejects.toBeInstanceOf(AgentSafetyError);
+
+		const events = repo.listEvents(created.id);
+		expect(events.some((event) => event.type === 'agent.fact_downgraded')).toBe(false);
+		expect(repo.getCase(created.id)?.board).toBeNull();
 		repo.close();
 	});
 
