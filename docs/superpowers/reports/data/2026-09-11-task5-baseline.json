@@ -1,0 +1,354 @@
+[
+  {
+    "id": "baseline-01",
+    "scenario": "S1_insufficient",
+    "case_id": "5bca617f-acb3-47d3-a8f3-e982c8f6eadf",
+    "http_status": 502,
+    "ok": false,
+    "error_code": "AGENT_OUTPUT_REJECTED",
+    "wall_ms": 45289,
+    "observation": {
+      "runId": "f51f9696-50cc-4dd6-a012-6c02f5cc8218",
+      "outcome": "failed",
+      "totalMs": 45277,
+      "modelCallCount": 2,
+      "modelCalls": [
+        {
+          "index": 1,
+          "durationMs": 37371,
+          "actionType": "propose_board_patch",
+          "parsed": true,
+          "ok": true
+        },
+        {
+          "index": 2,
+          "durationMs": 7877,
+          "actionType": "propose_board_patch",
+          "parsed": true,
+          "ok": true
+        }
+      ],
+      "repairCount": 1,
+      "downgradeCount": 0,
+      "hasNextAction": false,
+      "failure": "SAFETY_REJECTED"
+    },
+    "has_board": false,
+    "has_pending": false,
+    "repeat": 1
+  },
+  {
+    "id": "baseline-02",
+    "scenario": "S1_insufficient",
+    "case_id": "ef0126d8-8b5b-417b-8860-e05ce6c3eca5",
+    "http_status": 502,
+    "ok": false,
+    "error_code": "AGENT_OUTPUT_REJECTED",
+    "wall_ms": 48391,
+    "observation": {
+      "runId": "a3b20d65-d237-4d22-afae-703fd730026a",
+      "outcome": "failed",
+      "totalMs": 48378,
+      "modelCallCount": 3,
+      "modelCalls": [
+        {
+          "index": 1,
+          "durationMs": 32945,
+          "actionType": null,
+          "parsed": false,
+          "ok": true
+        },
+        {
+          "index": 2,
+          "durationMs": 7537,
+          "actionType": "propose_board_patch",
+          "parsed": true,
+          "ok": true
+        },
+        {
+          "index": 3,
+          "durationMs": 7872,
+          "actionType": "propose_board_patch",
+          "parsed": true,
+          "ok": true
+        }
+      ],
+      "repairCount": 2,
+      "downgradeCount": 0,
+      "hasNextAction": false,
+      "failure": "SAFETY_REJECTED"
+    },
+    "has_board": false,
+    "has_pending": false,
+    "repeat": 2
+  },
+  {
+    "id": "baseline-03",
+    "scenario": "S1_insufficient",
+    "case_id": "912a5158-bfb7-4f26-9467-b08186aa7982",
+    "http_status": 200,
+    "ok": true,
+    "error_code": null,
+    "wall_ms": 47889,
+    "observation": {
+      "runId": "c268cfaa-32fe-4a45-99b8-261f99140bd5",
+      "outcome": "finished",
+      "totalMs": 47874,
+      "turns": 3,
+      "modelCallCount": 4,
+      "modelCalls": [
+        {
+          "index": 1,
+          "durationMs": 15164,
+          "actionType": null,
+          "parsed": false,
+          "ok": true
+        },
+        {
+          "index": 2,
+          "durationMs": 10132,
+          "actionType": "propose_board_patch",
+          "parsed": true,
+          "ok": true
+        },
+        {
+          "index": 3,
+          "durationMs": 19132,
+          "actionType": "propose_board_patch",
+          "parsed": true,
+          "ok": true
+        },
+        {
+          "index": 4,
+          "durationMs": 3413,
+          "actionType": "finish",
+          "parsed": true,
+          "ok": true
+        }
+      ],
+      "repairCount": 2,
+      "downgradeCount": 1,
+      "hasNextAction": true
+    },
+    "has_board": true,
+    "has_pending": false,
+    "repeat": 3
+  },
+  {
+    "id": "baseline-04",
+    "scenario": "S2_sufficient",
+    "case_id": "f6439f85-a821-4661-bbec-d4e12a201c67",
+    "http_status": 502,
+    "ok": false,
+    "error_code": "AGENT_OUTPUT_REJECTED",
+    "wall_ms": 118572,
+    "observation": {
+      "runId": "79a0d3e1-a76e-4e88-bbd6-0e6bcb1125a9",
+      "outcome": "failed",
+      "totalMs": 118564,
+      "modelCallCount": 2,
+      "modelCalls": [
+        {
+          "index": 1,
+          "durationMs": 59091,
+          "actionType": null,
+          "parsed": false,
+          "ok": true
+        },
+        {
+          "index": 2,
+          "durationMs": 59461,
+          "actionType": null,
+          "parsed": false,
+          "ok": true
+        }
+      ],
+      "repairCount": 1,
+      "downgradeCount": 0,
+      "hasNextAction": false,
+      "failure": "AGENT_PROTOCOL_REJECTED"
+    },
+    "has_board": false,
+    "has_pending": false,
+    "repeat": 1
+  },
+  {
+    "id": "baseline-05",
+    "scenario": "S2_sufficient",
+    "case_id": "1fb0f87b-36f3-429d-97c7-e2130110a55c",
+    "http_status": 0,
+    "ok": false,
+    "error_code": "TRANSPORT",
+    "wall_ms": 300100,
+    "observation": null,
+    "has_board": false,
+    "has_pending": false,
+    "repeat": 2
+  },
+  {
+    "id": "baseline-06",
+    "scenario": "S2_sufficient",
+    "case_id": "8e978c9b-a206-4639-ad35-ea822cf89e4f",
+    "http_status": 200,
+    "ok": true,
+    "error_code": null,
+    "wall_ms": 81224,
+    "observation": {
+      "runId": "3665ca5f-4cc4-42e1-b554-58d24e6ebac8",
+      "outcome": "finished",
+      "totalMs": 81216,
+      "turns": 2,
+      "modelCallCount": 3,
+      "modelCalls": [
+        {
+          "index": 1,
+          "durationMs": 64474,
+          "actionType": "propose_board_patch",
+          "parsed": true,
+          "ok": true
+        },
+        {
+          "index": 2,
+          "durationMs": 13134,
+          "actionType": "propose_board_patch",
+          "parsed": true,
+          "ok": true
+        },
+        {
+          "index": 3,
+          "durationMs": 3584,
+          "actionType": "finish",
+          "parsed": true,
+          "ok": true
+        }
+      ],
+      "repairCount": 1,
+      "downgradeCount": 0,
+      "hasNextAction": true
+    },
+    "has_board": true,
+    "has_pending": false,
+    "repeat": 3
+  },
+  {
+    "id": "baseline-07",
+    "scenario": "S3_follow_up",
+    "case_id": "98217921-716d-431d-9ff4-1ce1fc063fbb",
+    "http_status": 201,
+    "ok": true,
+    "error_code": null,
+    "wall_ms": 55982,
+    "observation": {
+      "runId": "b4cb65ca-51e4-49e5-88e7-2577f5ba04b2",
+      "outcome": "failed",
+      "totalMs": 55953,
+      "modelCallCount": 2,
+      "modelCalls": [
+        {
+          "index": 1,
+          "durationMs": 43712,
+          "actionType": "propose_board_patch",
+          "parsed": true,
+          "ok": true
+        },
+        {
+          "index": 2,
+          "durationMs": 12226,
+          "actionType": "propose_board_patch",
+          "parsed": true,
+          "ok": true
+        }
+      ],
+      "repairCount": 1,
+      "downgradeCount": 0,
+      "hasNextAction": false,
+      "failure": "SAFETY_REJECTED"
+    },
+    "has_board": false,
+    "has_pending": false,
+    "repeat": 1
+  },
+  {
+    "id": "baseline-08",
+    "scenario": "S3_follow_up",
+    "case_id": "efa1a592-2578-495a-b2ef-6a56e08d6afd",
+    "http_status": 201,
+    "ok": true,
+    "error_code": null,
+    "wall_ms": 76347,
+    "observation": {
+      "runId": "8c64eac1-691c-4374-87e0-597a9733c783",
+      "outcome": "failed",
+      "totalMs": 76330,
+      "modelCallCount": 2,
+      "modelCalls": [
+        {
+          "index": 1,
+          "durationMs": 38375,
+          "actionType": null,
+          "parsed": false,
+          "ok": true
+        },
+        {
+          "index": 2,
+          "durationMs": 37943,
+          "actionType": null,
+          "parsed": false,
+          "ok": true
+        }
+      ],
+      "repairCount": 1,
+      "downgradeCount": 0,
+      "hasNextAction": false,
+      "failure": "AGENT_PROTOCOL_REJECTED"
+    },
+    "has_board": false,
+    "has_pending": false,
+    "repeat": 2
+  },
+  {
+    "id": "baseline-09",
+    "scenario": "S3_follow_up",
+    "case_id": "e61851ad-a93a-4b01-b9cc-437c82248bbd",
+    "http_status": 201,
+    "ok": true,
+    "error_code": null,
+    "wall_ms": 62823,
+    "observation": {
+      "runId": "c3327b3f-5cd2-4fb8-a47b-b9c7f32eded9",
+      "outcome": "failed",
+      "totalMs": 62806,
+      "modelCallCount": 3,
+      "modelCalls": [
+        {
+          "index": 1,
+          "durationMs": 21325,
+          "actionType": null,
+          "parsed": false,
+          "ok": true
+        },
+        {
+          "index": 2,
+          "durationMs": 14000,
+          "actionType": "propose_board_patch",
+          "parsed": true,
+          "ok": true
+        },
+        {
+          "index": 3,
+          "durationMs": 27465,
+          "actionType": "propose_board_patch",
+          "parsed": true,
+          "ok": true
+        }
+      ],
+      "repairCount": 2,
+      "downgradeCount": 0,
+      "hasNextAction": false,
+      "failure": "SAFETY_REJECTED"
+    },
+    "has_board": false,
+    "has_pending": false,
+    "repeat": 3
+  }
+]

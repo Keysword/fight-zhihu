@@ -1,0 +1,584 @@
+{
+  "note": "按 run.finished 顺序重新归属后的测量数据：S3 取第二次运行。原始输出见同目录 2026-09-11-task5-*.json。",
+  "baseline": [
+    {
+      "id": "baseline-01",
+      "scenario": "S1_insufficient",
+      "repeat": 1,
+      "wall_ms": 45289,
+      "http_status": 502,
+      "outcome": "failed",
+      "model_call_count": 2,
+      "total_ms": 45277,
+      "model_calls": [
+        {
+          "index": 1,
+          "durationMs": 37371,
+          "actionType": "propose_board_patch",
+          "parsed": true,
+          "ok": true
+        },
+        {
+          "index": 2,
+          "durationMs": 7877,
+          "actionType": "propose_board_patch",
+          "parsed": true,
+          "ok": true
+        }
+      ],
+      "repair_count": 1,
+      "downgrade_count": 0,
+      "has_next_action": false
+    },
+    {
+      "id": "baseline-02",
+      "scenario": "S1_insufficient",
+      "repeat": 2,
+      "wall_ms": 48391,
+      "http_status": 502,
+      "outcome": "failed",
+      "model_call_count": 3,
+      "total_ms": 48378,
+      "model_calls": [
+        {
+          "index": 1,
+          "durationMs": 32945,
+          "actionType": null,
+          "parsed": false,
+          "ok": true
+        },
+        {
+          "index": 2,
+          "durationMs": 7537,
+          "actionType": "propose_board_patch",
+          "parsed": true,
+          "ok": true
+        },
+        {
+          "index": 3,
+          "durationMs": 7872,
+          "actionType": "propose_board_patch",
+          "parsed": true,
+          "ok": true
+        }
+      ],
+      "repair_count": 2,
+      "downgrade_count": 0,
+      "has_next_action": false
+    },
+    {
+      "id": "baseline-03",
+      "scenario": "S1_insufficient",
+      "repeat": 3,
+      "wall_ms": 47889,
+      "http_status": 200,
+      "outcome": "finished",
+      "model_call_count": 4,
+      "total_ms": 47874,
+      "model_calls": [
+        {
+          "index": 1,
+          "durationMs": 15164,
+          "actionType": null,
+          "parsed": false,
+          "ok": true
+        },
+        {
+          "index": 2,
+          "durationMs": 10132,
+          "actionType": "propose_board_patch",
+          "parsed": true,
+          "ok": true
+        },
+        {
+          "index": 3,
+          "durationMs": 19132,
+          "actionType": "propose_board_patch",
+          "parsed": true,
+          "ok": true
+        },
+        {
+          "index": 4,
+          "durationMs": 3413,
+          "actionType": "finish",
+          "parsed": true,
+          "ok": true
+        }
+      ],
+      "repair_count": 2,
+      "downgrade_count": 1,
+      "has_next_action": true
+    },
+    {
+      "id": "baseline-04",
+      "scenario": "S2_sufficient",
+      "repeat": 1,
+      "wall_ms": 118572,
+      "http_status": 502,
+      "outcome": "failed",
+      "model_call_count": 2,
+      "total_ms": 118564,
+      "model_calls": [
+        {
+          "index": 1,
+          "durationMs": 59091,
+          "actionType": null,
+          "parsed": false,
+          "ok": true
+        },
+        {
+          "index": 2,
+          "durationMs": 59461,
+          "actionType": null,
+          "parsed": false,
+          "ok": true
+        }
+      ],
+      "repair_count": 1,
+      "downgrade_count": 0,
+      "has_next_action": false
+    },
+    {
+      "id": "baseline-05",
+      "scenario": "S2_sufficient",
+      "repeat": 2,
+      "wall_ms": 300100,
+      "http_status": 0,
+      "outcome": "failed",
+      "model_call_count": 1,
+      "total_ms": 300657,
+      "model_calls": [
+        {
+          "index": 1,
+          "durationMs": 300655,
+          "actionType": null,
+          "parsed": false,
+          "ok": false
+        }
+      ],
+      "repair_count": 0,
+      "downgrade_count": 0,
+      "has_next_action": false
+    },
+    {
+      "id": "baseline-06",
+      "scenario": "S2_sufficient",
+      "repeat": 3,
+      "wall_ms": 81224,
+      "http_status": 200,
+      "outcome": "finished",
+      "model_call_count": 3,
+      "total_ms": 81216,
+      "model_calls": [
+        {
+          "index": 1,
+          "durationMs": 64474,
+          "actionType": "propose_board_patch",
+          "parsed": true,
+          "ok": true
+        },
+        {
+          "index": 2,
+          "durationMs": 13134,
+          "actionType": "propose_board_patch",
+          "parsed": true,
+          "ok": true
+        },
+        {
+          "index": 3,
+          "durationMs": 3584,
+          "actionType": "finish",
+          "parsed": true,
+          "ok": true
+        }
+      ],
+      "repair_count": 1,
+      "downgrade_count": 0,
+      "has_next_action": true
+    },
+    {
+      "id": "baseline-07",
+      "scenario": "S3_follow_up",
+      "repeat": 1,
+      "wall_ms": 55982,
+      "http_status": 201,
+      "outcome": "failed",
+      "model_call_count": 2,
+      "total_ms": 55953,
+      "model_calls": [
+        {
+          "index": 1,
+          "durationMs": 43712,
+          "actionType": "propose_board_patch",
+          "parsed": true,
+          "ok": true
+        },
+        {
+          "index": 2,
+          "durationMs": 12226,
+          "actionType": "propose_board_patch",
+          "parsed": true,
+          "ok": true
+        }
+      ],
+      "repair_count": 1,
+      "downgrade_count": 0,
+      "has_next_action": false
+    },
+    {
+      "id": "baseline-08",
+      "scenario": "S3_follow_up",
+      "repeat": 2,
+      "wall_ms": 76347,
+      "http_status": 201,
+      "outcome": "failed",
+      "model_call_count": 2,
+      "total_ms": 76330,
+      "model_calls": [
+        {
+          "index": 1,
+          "durationMs": 38375,
+          "actionType": null,
+          "parsed": false,
+          "ok": true
+        },
+        {
+          "index": 2,
+          "durationMs": 37943,
+          "actionType": null,
+          "parsed": false,
+          "ok": true
+        }
+      ],
+      "repair_count": 1,
+      "downgrade_count": 0,
+      "has_next_action": false
+    },
+    {
+      "id": "baseline-09",
+      "scenario": "S3_follow_up",
+      "repeat": 3,
+      "wall_ms": 62823,
+      "http_status": 201,
+      "outcome": "failed",
+      "model_call_count": 3,
+      "total_ms": 62806,
+      "model_calls": [
+        {
+          "index": 1,
+          "durationMs": 21325,
+          "actionType": null,
+          "parsed": false,
+          "ok": true
+        },
+        {
+          "index": 2,
+          "durationMs": 14000,
+          "actionType": "propose_board_patch",
+          "parsed": true,
+          "ok": true
+        },
+        {
+          "index": 3,
+          "durationMs": 27465,
+          "actionType": "propose_board_patch",
+          "parsed": true,
+          "ok": true
+        }
+      ],
+      "repair_count": 2,
+      "downgrade_count": 0,
+      "has_next_action": false
+    }
+  ],
+  "after_fix": [
+    {
+      "id": "optimized-01",
+      "scenario": "S1_insufficient",
+      "repeat": 1,
+      "wall_ms": 45855,
+      "http_status": 200,
+      "outcome": "finished",
+      "model_call_count": 3,
+      "total_ms": 45841,
+      "model_calls": [
+        {
+          "index": 1,
+          "durationMs": 33084,
+          "actionType": "propose_board_patch",
+          "parsed": true,
+          "ok": true
+        },
+        {
+          "index": 2,
+          "durationMs": 8571,
+          "actionType": "propose_board_patch",
+          "parsed": true,
+          "ok": true
+        },
+        {
+          "index": 3,
+          "durationMs": 4121,
+          "actionType": "finish",
+          "parsed": true,
+          "ok": true
+        }
+      ],
+      "repair_count": 1,
+      "downgrade_count": 0,
+      "has_next_action": true
+    },
+    {
+      "id": "optimized-02",
+      "scenario": "S1_insufficient",
+      "repeat": 2,
+      "wall_ms": 73323,
+      "http_status": 502,
+      "outcome": "failed",
+      "model_call_count": 2,
+      "total_ms": 73314,
+      "model_calls": [
+        {
+          "index": 1,
+          "durationMs": 64347,
+          "actionType": null,
+          "parsed": false,
+          "ok": true
+        },
+        {
+          "index": 2,
+          "durationMs": 8956,
+          "actionType": null,
+          "parsed": false,
+          "ok": true
+        }
+      ],
+      "repair_count": 1,
+      "downgrade_count": 0,
+      "has_next_action": false
+    },
+    {
+      "id": "optimized-03",
+      "scenario": "S1_insufficient",
+      "repeat": 3,
+      "wall_ms": 34897,
+      "http_status": 200,
+      "outcome": "finished",
+      "model_call_count": 3,
+      "total_ms": 34886,
+      "model_calls": [
+        {
+          "index": 1,
+          "durationMs": 23258,
+          "actionType": "propose_board_patch",
+          "parsed": true,
+          "ok": true
+        },
+        {
+          "index": 2,
+          "durationMs": 8034,
+          "actionType": "propose_board_patch",
+          "parsed": true,
+          "ok": true
+        },
+        {
+          "index": 3,
+          "durationMs": 3569,
+          "actionType": "finish",
+          "parsed": true,
+          "ok": true
+        }
+      ],
+      "repair_count": 1,
+      "downgrade_count": 0,
+      "has_next_action": true
+    },
+    {
+      "id": "optimized-04",
+      "scenario": "S2_sufficient",
+      "repeat": 1,
+      "wall_ms": 27468,
+      "http_status": 200,
+      "outcome": "finished",
+      "model_call_count": 2,
+      "total_ms": 27458,
+      "model_calls": [
+        {
+          "index": 1,
+          "durationMs": 25095,
+          "actionType": "propose_board_patch",
+          "parsed": true,
+          "ok": true
+        },
+        {
+          "index": 2,
+          "durationMs": 2346,
+          "actionType": "finish",
+          "parsed": true,
+          "ok": true
+        }
+      ],
+      "repair_count": 0,
+      "downgrade_count": 0,
+      "has_next_action": true
+    },
+    {
+      "id": "optimized-05",
+      "scenario": "S2_sufficient",
+      "repeat": 2,
+      "wall_ms": 102877,
+      "http_status": 200,
+      "outcome": "finished",
+      "model_call_count": 3,
+      "total_ms": 102869,
+      "model_calls": [
+        {
+          "index": 1,
+          "durationMs": 71487,
+          "actionType": "propose_board_patch",
+          "parsed": true,
+          "ok": true
+        },
+        {
+          "index": 2,
+          "durationMs": 28458,
+          "actionType": "propose_board_patch",
+          "parsed": true,
+          "ok": true
+        },
+        {
+          "index": 3,
+          "durationMs": 2888,
+          "actionType": "finish",
+          "parsed": true,
+          "ok": true
+        }
+      ],
+      "repair_count": 1,
+      "downgrade_count": 1,
+      "has_next_action": true
+    },
+    {
+      "id": "optimized-06",
+      "scenario": "S2_sufficient",
+      "repeat": 3,
+      "wall_ms": 60286,
+      "http_status": 200,
+      "outcome": "finished",
+      "model_call_count": 3,
+      "total_ms": 60276,
+      "model_calls": [
+        {
+          "index": 1,
+          "durationMs": 28718,
+          "actionType": "propose_board_patch",
+          "parsed": true,
+          "ok": true
+        },
+        {
+          "index": 2,
+          "durationMs": 28032,
+          "actionType": "propose_board_patch",
+          "parsed": true,
+          "ok": true
+        },
+        {
+          "index": 3,
+          "durationMs": 3503,
+          "actionType": "finish",
+          "parsed": true,
+          "ok": true
+        }
+      ],
+      "repair_count": 1,
+      "downgrade_count": 0,
+      "has_next_action": true
+    },
+    {
+      "id": "optimized-07",
+      "scenario": "S3_follow_up",
+      "repeat": 1,
+      "wall_ms": 186698,
+      "http_status": 201,
+      "outcome": "finished",
+      "model_call_count": 4,
+      "total_ms": 186685,
+      "model_calls": [
+        {
+          "index": 1,
+          "durationMs": 127320,
+          "actionType": null,
+          "parsed": false,
+          "ok": true
+        },
+        {
+          "index": 2,
+          "durationMs": 23844,
+          "actionType": "propose_board_patch",
+          "parsed": true,
+          "ok": true
+        },
+        {
+          "index": 3,
+          "durationMs": 28675,
+          "actionType": "propose_board_patch",
+          "parsed": true,
+          "ok": true
+        },
+        {
+          "index": 4,
+          "durationMs": 6820,
+          "actionType": "finish",
+          "parsed": true,
+          "ok": true
+        }
+      ],
+      "repair_count": 2,
+      "downgrade_count": 0,
+      "has_next_action": true
+    },
+    {
+      "id": "optimized-08",
+      "scenario": "S3_follow_up",
+      "repeat": 2,
+      "wall_ms": 104597,
+      "http_status": 201,
+      "outcome": "failed",
+      "model_call_count": 2,
+      "total_ms": 104581,
+      "model_calls": [
+        {
+          "index": 1,
+          "durationMs": 83074,
+          "actionType": null,
+          "parsed": false,
+          "ok": true
+        },
+        {
+          "index": 2,
+          "durationMs": 21495,
+          "actionType": null,
+          "parsed": false,
+          "ok": true
+        }
+      ],
+      "repair_count": 1,
+      "downgrade_count": 0,
+      "has_next_action": false
+    },
+    {
+      "id": "optimized-09",
+      "scenario": "S3_follow_up",
+      "repeat": 3,
+      "wall_ms": 300100,
+      "http_status": 0,
+      "outcome": "incomplete",
+      "model_call_count": null,
+      "total_ms": null,
+      "model_calls": null,
+      "repair_count": null,
+      "downgrade_count": null,
+      "has_next_action": null
+    }
+  ]
+}
