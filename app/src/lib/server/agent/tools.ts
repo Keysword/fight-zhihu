@@ -89,6 +89,62 @@ export interface FactSupportIssue {
 	message: string;
 }
 
+/** 归属动词：模型常写成“某某表示：<原文>”，这只是出处说明，不改变被引内容。 */
+const ATTRIBUTION_VERBS = [
+	'表示',
+	'说',
+	'告知',
+	'回复',
+	'反馈',
+	'称',
+	'指出',
+	'提到',
+	'说明',
+	'通知'
+];
+
+interface TextUnit {
+	text: string;
+	start: number;
+	end: number;
+}
+
+/**
+ * 按分隔符把原文切成单元，并记录每个单元在“去标点串”中的区间。
+ * 这样既能把否定限定在分句内，又能判断结论横跨了哪些分句。
+ */
+function layeredUnits(text: string, separators: RegExp): TextUnit[] {
+	const parts = text
+		.split(separators)
+		.map((part) => compact(part))
+		.filter((part) => part.length > 0);
+	let offset = 0;
+	return parts.map((part) => {
+		const unit = { text: part, start: offset, end: offset + part.length };
+		offset += part.length;
+		return unit;
+	});
+}
+
+/**
+ * 结论的候选匹配串。
+ *
+ * 逐字引用原文是最常见也最安全的写法；其次是加上“某某表示：”这类出处前缀。
+ * 后者只剥离归属说明，被引内容仍须逐字出现在原文里并通过作用域检查。
+ */
+function candidateSpans(claimText: string): string[] {
+	const claim = compact(claimText);
+	const candidates = [claim];
+	for (const verb of ATTRIBUTION_VERBS) {
+		const marker = compact(verb);
+		const at = claim.indexOf(marker);
+		if (at <= 0) continue;
+		const rest = claim.slice(at + marker.length);
+		if (rest.length >= 2) candidates.push(rest);
+	}
+	return candidates;
+}
+
 /**
  * 在证据原文里寻找一段能支撑该结论的独立断言。
  *
@@ -100,26 +156,37 @@ function findScopedSupport(
 	claimText: string,
 	evidenceList: Evidence[]
 ): { ok: true } | { problem: string } {
-	const claim = compact(claimText);
-	if (claim.length < 2) return { problem: '结论过短，无法与原文核对' };
+	const candidates = candidateSpans(claimText);
+	if (candidates[0].length < 2) return { problem: '结论过短，无法与原文核对' };
 	let unsafeScope: string | null = null;
 	for (const evidence of evidenceList) {
-		for (const sentence of evidence.content.split(SENTENCE_SEPARATORS)) {
-			if (!compact(sentence).includes(claim)) continue;
-			const clause =
-				sentence.split(CLAUSE_SEPARATORS).find((item) => compact(item).includes(claim)) ?? sentence;
-			const clauseText = compact(clause);
-			const sentenceText = compact(sentence);
-			const localMarker = [...NEGATION_MARKERS, ...UNCERTAIN_MARKERS].find(
-				(marker) => clauseText.includes(marker) && !claim.includes(marker)
-			);
-			if (localMarker) {
-				unsafeScope = `不能从否定、疑问或未确认的表述中截取（“${localMarker}”）`;
+		const compactEvidence = compact(evidence.content);
+		const clauses = layeredUnits(evidence.content, CLAUSE_SEPARATORS);
+		const sentences = layeredUnits(evidence.content, SENTENCE_SEPARATORS);
+		for (const candidate of candidates) {
+			const at = compactEvidence.indexOf(candidate);
+			if (at === -1) continue;
+			const end = at + candidate.length;
+			// 结论可能横跨多个分句（例如逐字引用整条证据），逐个检查被覆盖的分句。
+			const clauseMarker = clauses
+				.filter((unit) => unit.start < end && unit.end > at)
+				.flatMap((unit) =>
+					[...NEGATION_MARKERS, ...UNCERTAIN_MARKERS].filter(
+						(marker) => unit.text.includes(marker) && !candidate.includes(marker)
+					)
+				)[0];
+			if (clauseMarker) {
+				unsafeScope = `不能从否定、疑问或未确认的表述中截取（“${clauseMarker}”）`;
 				continue;
 			}
-			const conditionMarker = CONDITION_MARKERS.find(
-				(marker) => sentenceText.includes(marker) && !claim.includes(marker)
-			);
+			// 条件可能落在前一分句，因此按结论覆盖到的整句判定。
+			const conditionMarker = sentences
+				.filter((unit) => unit.start < end && unit.end > at)
+				.flatMap((unit) =>
+					CONDITION_MARKERS.filter(
+						(marker) => unit.text.includes(marker) && !candidate.includes(marker)
+					)
+				)[0];
 			if (conditionMarker) {
 				unsafeScope = `不能从条件句里截取（“${conditionMarker}”）`;
 				continue;
