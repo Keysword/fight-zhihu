@@ -120,6 +120,7 @@ export type GuidanceDraft = z.infer<typeof guidanceDraftSchema>;
 export interface CaseInput extends CaseInputRequest {
 	id: string;
 	caseId: string;
+	contextRevision: number;
 	createdAt: string;
 }
 

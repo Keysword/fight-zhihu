@@ -2,7 +2,9 @@ import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import { z } from 'zod';
 
-import { backgroundBoardSchema, evidenceSchema } from '$lib/domain/schemas';
+import { caseInputSchema, guidanceDraftSchema } from '$lib/domain/guidance';
+import type { CaseInput, GuidanceDraft, GuidanceSnapshot } from '$lib/domain/guidance';
+import { backgroundBoardSchema, evidenceSchema, externalClueSchema } from '$lib/domain/schemas';
 import type {
 	AgentEvent,
 	BackgroundBoard,
@@ -11,6 +13,7 @@ import type {
 	CaseSummary,
 	Evidence
 } from '$lib/domain/types';
+import type { ExternalClue } from '$lib/domain/types';
 import { openDatabase } from '$lib/server/db';
 
 const newCaseSchema = z
@@ -33,6 +36,8 @@ interface CaseRow {
 	board_json: string | null;
 	pending_board_json: string | null;
 	pending_revision: number | null;
+	context_revision: number;
+	current_guidance_id: string | null;
 	created_at: string;
 	updated_at: string;
 }
@@ -54,6 +59,27 @@ interface EventRow {
 	created_at: string;
 }
 
+interface CaseInputRow {
+	id: string;
+	case_id: string;
+	request_id: string;
+	kind: CaseInput['kind'];
+	content: string;
+	guidance_id: string | null;
+	context_revision: number;
+	created_at: string;
+}
+
+interface GuidanceRow {
+	id: string;
+	case_id: string;
+	run_id: string;
+	context_revision: number;
+	draft_json: string;
+	external_clues_json: string;
+	created_at: string;
+}
+
 export class RevisionConflictError extends Error {
 	constructor() {
 		super('案例已被其他分析更新，请基于最新版本重试');
@@ -72,6 +98,20 @@ export class EvidenceNotFoundError extends Error {
 	constructor(evidenceId: string) {
 		super(`找不到证据：${evidenceId}`);
 		this.name = 'EvidenceNotFoundError';
+	}
+}
+
+export class IdempotencyConflictError extends Error {
+	constructor(requestId: string) {
+		super(`请求 ${requestId} 已用于不同的输入`);
+		this.name = 'IdempotencyConflictError';
+	}
+}
+
+export class GuidanceRunConflictError extends Error {
+	constructor(runId: string) {
+		super(`Guidance 运行 ${runId} 已用于不同的快照`);
+		this.name = 'GuidanceRunConflictError';
 	}
 }
 
@@ -99,11 +139,67 @@ function evidenceFromRow(row: EvidenceRow): Evidence {
 	});
 }
 
+function caseInputFromRow(row: CaseInputRow): CaseInput {
+	const request = caseInputSchema.parse({
+		requestId: row.request_id,
+		kind: row.kind,
+		content: row.content,
+		guidanceId: row.guidance_id
+	});
+	return {
+		...request,
+		id: row.id,
+		caseId: row.case_id,
+		contextRevision: row.context_revision,
+		createdAt: row.created_at
+	};
+}
+
+function guidanceFromRow(row: GuidanceRow): GuidanceSnapshot {
+	return {
+		id: row.id,
+		caseId: row.case_id,
+		runId: row.run_id,
+		contextRevision: row.context_revision,
+		createdAt: row.created_at,
+		draft: guidanceDraftSchema.parse(JSON.parse(row.draft_json)),
+		externalClues: z.array(externalClueSchema).parse(JSON.parse(row.external_clues_json))
+	};
+}
+
 export interface CaseRepository {
 	createCase(input: z.input<typeof newCaseSchema>): CaseRecord;
 	listCases(): CaseSummary[];
 	getCase(caseId: string): CaseRecord | null;
 	appendEvidence(caseId: string, input: z.input<typeof newEvidenceSchema>): Evidence;
+	appendCaseInput(
+		caseId: string,
+		input: z.input<typeof caseInputSchema>
+	): {
+		outcome: 'inserted' | 'replayed';
+		input: CaseInput;
+		currentContextRevision: number;
+	};
+	listCaseInputs(caseId: string): CaseInput[];
+	getCaseContext(caseId: string): {
+		contextRevision: number;
+		currentGuidanceId: string | null;
+	};
+	saveGuidance(
+		caseId: string,
+		expectedContextRevision: number,
+		draft: GuidanceDraft,
+		externalClues: ExternalClue[],
+		runId: string
+	): {
+		status: 'current' | 'superseded';
+		snapshot: GuidanceSnapshot;
+		currentContextRevision: number;
+		currentGuidanceId: string | null;
+	};
+	getCurrentGuidance(caseId: string): GuidanceSnapshot | null;
+	getGuidance(caseId: string, guidanceId: string): GuidanceSnapshot | null;
+	listGuidance(caseId: string): GuidanceSnapshot[];
 	saveBoard(caseId: string, expectedRevision: number, board: BackgroundBoard): CaseRecord;
 	confirmEvidence(caseId: string, evidenceId: string): Evidence;
 	stageBoardProposal(caseId: string, expectedRevision: number, board: BackgroundBoard): CaseRecord;
@@ -174,12 +270,12 @@ export function createCaseRepository(path: string): CaseRepository {
 		},
 
 		appendEvidence(caseId, input) {
-			requireCase(caseId);
 			const parsed = newEvidenceSchema.parse(input);
 			const evidence = evidenceSchema.parse({ ...parsed, id: randomUUID() });
 			const now = new Date().toISOString();
 			database.exec('BEGIN IMMEDIATE');
 			try {
+				requireCase(caseId);
 				database
 					.prepare(
 						'INSERT INTO evidence (id, case_id, kind, content, source_label, occurred_at, confirmation, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
@@ -194,13 +290,218 @@ export function createCaseRepository(path: string): CaseRepository {
 						evidence.confirmation,
 						now
 					);
-				database.prepare('UPDATE cases SET updated_at = ? WHERE id = ?').run(now, caseId);
+				database
+					.prepare(
+						'UPDATE cases SET context_revision = context_revision + 1, current_guidance_id = NULL, updated_at = ? WHERE id = ?'
+					)
+					.run(now, caseId);
 				database.exec('COMMIT');
 			} catch (error) {
 				database.exec('ROLLBACK');
 				throw error;
 			}
 			return evidence;
+		},
+
+		appendCaseInput(caseId, input) {
+			database.exec('BEGIN IMMEDIATE');
+			try {
+				const caseRow = requireCase(caseId);
+				const parsed = caseInputSchema.parse(input);
+				const existing = database
+					.prepare(
+						'SELECT id, case_id, request_id, kind, content, guidance_id, context_revision, created_at FROM case_inputs WHERE case_id = ? AND request_id = ?'
+					)
+					.get(caseId, parsed.requestId) as CaseInputRow | undefined;
+				if (existing) {
+					if (
+						existing.kind !== parsed.kind ||
+						existing.content !== parsed.content ||
+						existing.guidance_id !== parsed.guidanceId
+					) {
+						throw new IdempotencyConflictError(parsed.requestId);
+					}
+					database.exec('COMMIT');
+					return {
+						outcome: 'replayed' as const,
+						input: caseInputFromRow(existing),
+						currentContextRevision: caseRow.context_revision
+					};
+				}
+				if (parsed.guidanceId !== null) {
+					const guidance = database
+						.prepare('SELECT 1 FROM guidance_snapshots WHERE case_id = ? AND id = ?')
+						.get(caseId, parsed.guidanceId);
+					if (!guidance) throw new Error('指导快照与案例不一致或不存在');
+				}
+
+				const id = randomUUID();
+				const now = new Date().toISOString();
+				const contextRevision = caseRow.context_revision + 1;
+				database
+					.prepare(
+						'UPDATE cases SET context_revision = context_revision + 1, current_guidance_id = NULL, updated_at = ? WHERE id = ?'
+					)
+					.run(now, caseId);
+				database
+					.prepare(
+						'INSERT INTO case_inputs (id, case_id, request_id, kind, content, guidance_id, context_revision, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+					)
+					.run(
+						id,
+						caseId,
+						parsed.requestId,
+						parsed.kind,
+						parsed.content,
+						parsed.guidanceId,
+						contextRevision,
+						now
+					);
+				database.exec('COMMIT');
+				return {
+					outcome: 'inserted' as const,
+					input: caseInputFromRow({
+						id,
+						case_id: caseId,
+						request_id: parsed.requestId,
+						kind: parsed.kind,
+						content: parsed.content,
+						guidance_id: parsed.guidanceId,
+						context_revision: contextRevision,
+						created_at: now
+					}),
+					currentContextRevision: contextRevision
+				};
+			} catch (error) {
+				database.exec('ROLLBACK');
+				throw error;
+			}
+		},
+
+		listCaseInputs(caseId) {
+			requireCase(caseId);
+			const rows = database
+				.prepare(
+					'SELECT id, case_id, request_id, kind, content, guidance_id, context_revision, created_at FROM case_inputs WHERE case_id = ? ORDER BY sequence'
+				)
+				.all(caseId) as unknown as CaseInputRow[];
+			return rows.map(caseInputFromRow);
+		},
+
+		getCaseContext(caseId) {
+			const row = requireCase(caseId);
+			return {
+				contextRevision: row.context_revision,
+				currentGuidanceId: row.current_guidance_id
+			};
+		},
+
+		saveGuidance(caseId, expectedContextRevision, inputDraft, inputExternalClues, runId) {
+			database.exec('BEGIN IMMEDIATE');
+			try {
+				requireCase(caseId);
+				const draft = guidanceDraftSchema.parse(inputDraft);
+				const externalClues = z.array(externalClueSchema).parse(inputExternalClues);
+				const existingRow = database
+					.prepare(
+						'SELECT id, case_id, run_id, context_revision, draft_json, external_clues_json, created_at FROM guidance_snapshots WHERE run_id = ?'
+					)
+					.get(runId) as GuidanceRow | undefined;
+				if (existingRow) {
+					const existing = guidanceFromRow(existingRow);
+					if (
+						existing.caseId !== caseId ||
+						existing.contextRevision !== expectedContextRevision ||
+						JSON.stringify(existing.draft) !== JSON.stringify(draft) ||
+						JSON.stringify(existing.externalClues) !== JSON.stringify(externalClues)
+					) {
+						throw new GuidanceRunConflictError(runId);
+					}
+					const currentCase = requireCase(caseId);
+					database.exec('COMMIT');
+					return {
+						status:
+							currentCase.current_guidance_id === existing.id
+								? ('current' as const)
+								: ('superseded' as const),
+						snapshot: existing,
+						currentContextRevision: currentCase.context_revision,
+						currentGuidanceId: currentCase.current_guidance_id
+					};
+				}
+				const id = randomUUID();
+				const createdAt = new Date().toISOString();
+				database
+					.prepare(
+						'INSERT INTO guidance_snapshots (id, case_id, run_id, context_revision, draft_json, external_clues_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+					)
+					.run(
+						id,
+						caseId,
+						runId,
+						expectedContextRevision,
+						JSON.stringify(draft),
+						JSON.stringify(externalClues),
+						createdAt
+					);
+				const currentResult = database
+					.prepare(
+						'UPDATE cases SET current_guidance_id = ?, updated_at = ? WHERE id = ? AND context_revision = ?'
+					)
+					.run(id, createdAt, caseId, expectedContextRevision);
+				const isCurrent = Number(currentResult.changes) === 1;
+				const currentCase = requireCase(caseId);
+				database.exec('COMMIT');
+				const snapshot: GuidanceSnapshot = {
+					id,
+					caseId,
+					runId,
+					contextRevision: expectedContextRevision,
+					createdAt,
+					draft,
+					externalClues
+				};
+				return {
+					status: isCurrent ? ('current' as const) : ('superseded' as const),
+					snapshot,
+					currentContextRevision: currentCase.context_revision,
+					currentGuidanceId: currentCase.current_guidance_id
+				};
+			} catch (error) {
+				database.exec('ROLLBACK');
+				throw error;
+			}
+		},
+
+		getCurrentGuidance(caseId) {
+			const caseRow = requireCase(caseId);
+			if (!caseRow.current_guidance_id) return null;
+			const row = database
+				.prepare(
+					'SELECT id, case_id, run_id, context_revision, draft_json, external_clues_json, created_at FROM guidance_snapshots WHERE case_id = ? AND id = ?'
+				)
+				.get(caseId, caseRow.current_guidance_id) as GuidanceRow | undefined;
+			return row ? guidanceFromRow(row) : null;
+		},
+
+		getGuidance(caseId, guidanceId) {
+			requireCase(caseId);
+			const row = database
+				.prepare(
+					'SELECT id, case_id, run_id, context_revision, draft_json, external_clues_json, created_at FROM guidance_snapshots WHERE case_id = ? AND id = ?'
+				)
+				.get(caseId, guidanceId) as GuidanceRow | undefined;
+			return row ? guidanceFromRow(row) : null;
+		},
+
+		listGuidance(caseId) {
+			requireCase(caseId);
+			const rows = database
+				.prepare(
+					'SELECT id, case_id, run_id, context_revision, draft_json, external_clues_json, created_at FROM guidance_snapshots WHERE case_id = ? ORDER BY sequence'
+				)
+				.all(caseId) as unknown as GuidanceRow[];
+			return rows.map(guidanceFromRow);
 		},
 
 		saveBoard(caseId, expectedRevision, inputBoard) {
@@ -226,16 +527,27 @@ export function createCaseRepository(path: string): CaseRepository {
 		},
 
 		confirmEvidence(caseId, evidenceId) {
-			requireCase(caseId);
 			const now = new Date().toISOString();
-			const result = database
-				.prepare('UPDATE evidence SET confirmation = ? WHERE id = ? AND case_id = ?')
-				.run('official', evidenceId, caseId);
-			if (Number(result.changes) !== 1) throw new EvidenceNotFoundError(evidenceId);
-			database.prepare('UPDATE cases SET updated_at = ? WHERE id = ?').run(now, caseId);
-			const evidence = getEvidence(caseId).find((item) => item.id === evidenceId);
-			if (!evidence) throw new EvidenceNotFoundError(evidenceId);
-			return evidence;
+			database.exec('BEGIN IMMEDIATE');
+			try {
+				requireCase(caseId);
+				const result = database
+					.prepare('UPDATE evidence SET confirmation = ? WHERE id = ? AND case_id = ?')
+					.run('official', evidenceId, caseId);
+				if (Number(result.changes) !== 1) throw new EvidenceNotFoundError(evidenceId);
+				database
+					.prepare(
+						'UPDATE cases SET context_revision = context_revision + 1, current_guidance_id = NULL, updated_at = ? WHERE id = ?'
+					)
+					.run(now, caseId);
+				const evidence = getEvidence(caseId).find((item) => item.id === evidenceId);
+				if (!evidence) throw new EvidenceNotFoundError(evidenceId);
+				database.exec('COMMIT');
+				return evidence;
+			} catch (error) {
+				database.exec('ROLLBACK');
+				throw error;
+			}
 		},
 
 		stageBoardProposal(caseId, expectedRevision, inputBoard) {
