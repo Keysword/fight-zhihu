@@ -62,7 +62,7 @@
 			const nextProposal =
 				payload.data.run?.proposedBoard ?? payload.data.case.pendingBoard ?? null;
 			changesOverride = diffBoards(view.case.board, nextProposal ?? payload.data.case.board);
-			updatedView = { case: payload.data.case, events: payload.data.events };
+			updatedView = payload.data;
 			proposedOverride = nextProposal;
 			newEvidence = '';
 			if (payload.data.run?.outcome === 'failed') {
@@ -99,7 +99,7 @@
 			const payload = await response.json();
 			if (!response.ok || !payload.ok)
 				throw new Error(payload.error?.message ?? '没有完成这次审阅');
-			updatedView = { case: payload.data.case, events: payload.data.events };
+			updatedView = payload.data;
 			proposedOverride = null;
 			if (action === 'discard') {
 				changesOverride = { blocker: false, claimIds: [], nextAction: false };
@@ -139,7 +139,7 @@
 			);
 			const payload = await response.json();
 			if (!response.ok || !payload.ok) throw new Error(payload.error?.message ?? '确认没有成功');
-			updatedView = { case: payload.data.case, events: payload.data.events };
+			updatedView = payload.data;
 		} catch (error) {
 			failure = error instanceof Error ? error.message : '确认没有成功';
 		} finally {

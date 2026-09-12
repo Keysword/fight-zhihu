@@ -7,7 +7,7 @@ import { createCaseRepository, CaseNotFoundError } from '$lib/server/cases/repos
 import type { GuidanceDraft } from '$lib/domain/guidance';
 import type { BackgroundBoard } from '$lib/domain/types';
 import type { GuidanceRunResult } from '$lib/server/agent/guidance-runtime';
-import { createCaseService } from './case-service';
+import { createCaseService, GuidanceModeDisabledError } from './case-service';
 
 const directories: string[] = [];
 
@@ -205,6 +205,29 @@ describe('case service', () => {
 		repository.close();
 	});
 
+	it('rejects guided-only methods while legacy runCase remains available', async () => {
+		const { repository, legacyRunner, guidanceRunner, service } = setup('legacy');
+		const created = service.createCase({ title: '事项', goal: '推进', confusion: '未知' });
+
+		expect(() =>
+			service.appendCaseInput(created.case.id, {
+				kind: 'context',
+				content: '新增情况',
+				guidanceId: null,
+				requestId: crypto.randomUUID()
+			})
+		).toThrow(GuidanceModeDisabledError);
+		await expect(service.runGuidance(created.case.id)).rejects.toBeInstanceOf(
+			GuidanceModeDisabledError
+		);
+		await expect(service.runCase(created.case.id)).resolves.toMatchObject({
+			run: { outcome: 'finished' }
+		});
+		expect(legacyRunner.run).toHaveBeenCalledOnce();
+		expect(guidanceRunner.run).not.toHaveBeenCalled();
+		repository.close();
+	});
+
 	it('confirms a server-staged board proposal without accepting a client board', () => {
 		const { repository, service } = setup();
 		const created = service.createCase({
@@ -302,7 +325,16 @@ describe('case service', () => {
 			contextRevision: 0,
 			guidance: { id: first.snapshot.id, draft: { understanding: { summary: '第一版理解' } } }
 		});
-		expect(current.guidanceHistory).toEqual([first.snapshot]);
+		expect(current.guidanceHistory).toEqual([
+			{
+				id: first.snapshot.id,
+				contextRevision: 0,
+				createdAt: first.snapshot.createdAt,
+				understandingSummary: '第一版理解',
+				changeSummary: null,
+				hasQuestion: false
+			}
+		]);
 
 		repository.appendCaseInput(created.case.id, {
 			kind: 'correction',
@@ -313,8 +345,53 @@ describe('case service', () => {
 		const stale = service.getCase(created.case.id);
 		expect(stale.contextRevision).toBe(1);
 		expect(stale.guidance).toBeNull();
-		expect(stale.guidanceHistory).toEqual([first.snapshot]);
+		expect(stale.guidanceHistory).toEqual(current.guidanceHistory);
 		expect(stale.inputs).toHaveLength(1);
+		repository.close();
+	});
+
+	it('returns at most twenty guidance summaries and loads scoped details on demand', () => {
+		const { repository, service } = setup('guided');
+		const created = service.createCase({ title: '事项', goal: '推进', confusion: '未知' });
+		const other = service.createCase({ title: '其他', goal: '推进', confusion: '未知' });
+		const snapshots = Array.from(
+			{ length: 25 },
+			(_, index) =>
+				repository.saveGuidance(
+					created.case.id,
+					0,
+					{
+						...guidanceDraft(`理解 ${index + 1}`),
+						question: index === 24 ? '最后一个问题？' : null,
+						changeSummary: index === 24 ? '最后一次变化' : null
+					},
+					[],
+					crypto.randomUUID()
+				).snapshot
+		);
+
+		const view = service.getCase(created.case.id);
+		expect(view.guidanceHistory).toHaveLength(20);
+		expect(view.guidanceHistory[0]).toMatchObject({
+			id: snapshots[5].id,
+			understandingSummary: '理解 6',
+			hasQuestion: false
+		});
+		expect(view.guidanceHistory.at(-1)).toEqual({
+			id: snapshots[24].id,
+			contextRevision: 0,
+			createdAt: snapshots[24].createdAt,
+			understandingSummary: '理解 25',
+			changeSummary: '最后一次变化',
+			hasQuestion: true
+		});
+		expect(service.getGuidance(created.case.id, snapshots[0].id)).toEqual(snapshots[0]);
+		expect(() => service.getGuidance(other.case.id, snapshots[0].id)).toThrow(
+			'指导引用无效或不属于当前案例'
+		);
+		expect(() => service.getGuidance(other.case.id, 'missing')).toThrow(
+			'指导引用无效或不属于当前案例'
+		);
 		repository.close();
 	});
 
@@ -343,7 +420,7 @@ describe('case service', () => {
 		expect(repository.listCaseInputs(created.case.id)).toHaveLength(1);
 		expect(
 			repository.listEvents(created.case.id).filter((event) => event.type === 'case.input_added')
-		).toHaveLength(1);
+		).toHaveLength(0);
 		expect(JSON.stringify(repository.listCaseInputs(created.case.id))).not.toContain(
 			'replacements'
 		);
@@ -432,6 +509,58 @@ describe('case service', () => {
 		repository.close();
 	});
 
+	it('turns a rejected guided run into recoverable data while preserving inputs and evidence', async () => {
+		const { repository, guidanceRunner, service } = setup('guided');
+		const created = service.createCase({ title: '事项', goal: '推进', confusion: '未知' });
+		const prior = repository.saveGuidance(
+			created.case.id,
+			0,
+			guidanceDraft('运行前已有理解'),
+			[],
+			crypto.randomUUID()
+		).snapshot;
+		guidanceRunner.run.mockRejectedValue(new Error('unexpected runner rejection'));
+
+		const direct = await service.runGuidance(created.case.id);
+		service.appendCaseInput(created.case.id, {
+			kind: 'context',
+			content: '先保存的输入',
+			guidanceId: null,
+			requestId: crypto.randomUUID()
+		});
+
+		const rerun = await service.runCase(created.case.id);
+		const evidence = await service.appendEvidenceAndRun(created.case.id, {
+			kind: 'message',
+			content: '刚保存的材料',
+			sourceLabel: '负责方',
+			occurredAt: null
+		});
+
+		for (const result of [direct, rerun, evidence]) {
+			expect(result.run).toMatchObject({
+				outcome: 'failed',
+				guidance: null,
+				error: {
+					code: 'GUIDANCE_RUN_FAILED',
+					message: '材料/输入已保存，本轮未完成，可以稍后重试'
+				}
+			});
+		}
+		expect(direct.guidance).toEqual(prior);
+		expect(direct.guidanceHistory).toHaveLength(1);
+		expect(evidence.inputs).toHaveLength(1);
+		expect(evidence.case.evidence).toHaveLength(1);
+		expect(evidence.guidance).toBeNull();
+		expect(evidence.guidanceHistory).toHaveLength(1);
+		expect(
+			repository
+				.listEvents(created.case.id)
+				.filter((event) => event.type === 'guidance.run.finished')
+		).toEqual([]);
+		repository.close();
+	});
+
 	it('keeps model questions in the current guidance view', async () => {
 		const { repository, guidanceRunner, service } = setup('guided');
 		guidanceRunner.run.mockImplementationOnce(async (caseId) => {
@@ -489,6 +618,18 @@ describe('case service', () => {
 			expect(source.kind).toBe('evidence');
 			expect(evidenceIds.has(source.id)).toBe(true);
 		}
+		const evidenceByLabel = new Map(
+			result.case.evidence.map((evidence) => [evidence.sourceLabel, evidence.id])
+		);
+		expect(result.guidance?.draft.communicationChecks[0].sources).toEqual([
+			{ kind: 'evidence', id: evidenceByLabel.get('部门对接人') },
+			{ kind: 'evidence', id: evidenceByLabel.get('接引同事') }
+		]);
+		expect(result.guidance?.draft.nextStep?.contact).toEqual({
+			label: '人力 / 住宿管理方',
+			basis: 'suggested_role',
+			sources: []
+		});
 		expect(result.case.board).toBeNull();
 		expect(legacyRunner.run).not.toHaveBeenCalled();
 		repository.close();

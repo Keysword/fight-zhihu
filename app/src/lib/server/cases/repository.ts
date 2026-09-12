@@ -254,7 +254,7 @@ export interface CaseRepository {
 	};
 	getCurrentGuidance(caseId: string): GuidanceSnapshot | null;
 	getGuidance(caseId: string, guidanceId: string): GuidanceSnapshot | null;
-	listGuidance(caseId: string): GuidanceSnapshot[];
+	listGuidance(caseId: string, limit?: number): GuidanceSnapshot[];
 	saveBoard(caseId: string, expectedRevision: number, board: BackgroundBoard): CaseRecord;
 	confirmEvidence(caseId: string, evidenceId: string): Evidence;
 	stageBoardProposal(caseId: string, expectedRevision: number, board: BackgroundBoard): CaseRecord;
@@ -550,13 +550,20 @@ export function createCaseRepository(path: string): CaseRepository {
 			return row ? guidanceFromRow(row) : null;
 		},
 
-		listGuidance(caseId) {
+		listGuidance(caseId, limit) {
 			requireCase(caseId);
-			const rows = database
-				.prepare(
-					'SELECT id, case_id, run_id, context_revision, draft_json, external_clues_json, created_at FROM guidance_snapshots WHERE case_id = ? ORDER BY sequence'
-				)
-				.all(caseId) as unknown as GuidanceRow[];
+			const rows = (limit === undefined
+				? database
+						.prepare(
+							'SELECT id, case_id, run_id, context_revision, draft_json, external_clues_json, created_at FROM guidance_snapshots WHERE case_id = ? ORDER BY sequence'
+						)
+						.all(caseId)
+				: database
+						.prepare(
+							'SELECT id, case_id, run_id, context_revision, draft_json, external_clues_json, created_at FROM guidance_snapshots WHERE case_id = ? ORDER BY sequence DESC LIMIT ?'
+						)
+						.all(caseId, limit)) as unknown as GuidanceRow[];
+			if (limit !== undefined) rows.reverse();
 			return rows.map(guidanceFromRow);
 		},
 

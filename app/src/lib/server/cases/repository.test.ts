@@ -702,6 +702,26 @@ describe('case repository', () => {
 		repo.close();
 	});
 
+	it('can read only the latest guidance snapshots while preserving chronological order', () => {
+		const repo = guidanceRepository(temporaryDatabasePath());
+		const created = repo.createCase({ title: '事项', goal: '解决问题', confusion: '背景不清' });
+		const snapshots = Array.from(
+			{ length: 4 },
+			(_, index) =>
+				repo.saveGuidance(
+					created.id,
+					0,
+					guidanceDraft(`建议 ${index + 1}`),
+					[],
+					crypto.randomUUID()
+				).snapshot
+		);
+
+		expect(repo.listGuidance(created.id, 2)).toEqual(snapshots.slice(-2));
+		expect(repo.listGuidance(created.id)).toEqual(snapshots);
+		repo.close();
+	});
+
 	it('migrates a legacy database idempotently without changing legacy data or board revision', () => {
 		const path = temporaryDatabasePath();
 		const legacy = new DatabaseSync(path);

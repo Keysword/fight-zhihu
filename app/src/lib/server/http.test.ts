@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { GuidanceReferenceError, IdempotencyConflictError } from '$lib/server/cases/repository';
 import { apiError } from './http';
+import { GuidanceModeDisabledError } from './services/case-service';
 
 async function errorPayload(response: Response) {
 	return (await response.json()) as {
@@ -33,6 +34,19 @@ describe('apiError', () => {
 			error: {
 				code: 'GUIDANCE_REFERENCE_INVALID',
 				message: '指导引用无效或不属于当前案例'
+			}
+		});
+	});
+
+	it('maps disabled guided endpoints to a stable 404 response', async () => {
+		const response = apiError(new GuidanceModeDisabledError());
+
+		expect(response.status).toBe(404);
+		expect(await errorPayload(response)).toEqual({
+			ok: false,
+			error: {
+				code: 'GUIDANCE_MODE_DISABLED',
+				message: '指导模式未启用'
 			}
 		});
 	});

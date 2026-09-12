@@ -15,7 +15,11 @@ import { buildDormDemoFallback } from '$lib/server/agent/fallback';
 import type { GuidanceRunResult } from '$lib/server/agent/guidance-runtime';
 import { runErrorDetail, type AgentRunResult } from '$lib/server/agent/runtime';
 import { validateBoardForCase } from '$lib/server/agent/tools';
-import { CaseNotFoundError, type CaseRepository } from '$lib/server/cases/repository';
+import {
+	CaseNotFoundError,
+	GuidanceReferenceError,
+	type CaseRepository
+} from '$lib/server/cases/repository';
 
 const replacementSchema = z.object({ from: z.string().min(1), to: z.string() }).strict();
 const serviceCreateSchema = createCaseInputSchema.extend({
@@ -44,13 +48,29 @@ export interface GuidanceRunner {
 	run(caseId: string): Promise<GuidanceRunResult>;
 }
 
+export class GuidanceModeDisabledError extends Error {
+	constructor() {
+		super('指导模式未启用');
+		this.name = 'GuidanceModeDisabledError';
+	}
+}
+
+export interface GuidanceHistorySummary {
+	id: string;
+	contextRevision: number;
+	createdAt: string;
+	understandingSummary: string;
+	changeSummary: string | null;
+	hasQuestion: boolean;
+}
+
 export interface CaseView {
 	mode: 'legacy' | 'guided';
 	case: CaseRecord;
 	events: AgentEvent[];
 	inputs: CaseInput[];
 	guidance: GuidanceSnapshot | null;
-	guidanceHistory: GuidanceSnapshot[];
+	guidanceHistory: GuidanceHistorySummary[];
 	contextRevision: number;
 }
 
@@ -75,15 +95,27 @@ export function createCaseService(dependencies: {
 		return caseRecord;
 	}
 
+	function requireGuidanceMode(): void {
+		if (!configuration.guidanceMode) throw new GuidanceModeDisabledError();
+	}
+
 	function view(caseId: string): CaseView {
 		const context = repository.getCaseContext(caseId);
+		const guidanceHistory = repository.listGuidance(caseId, 20).map((snapshot) => ({
+			id: snapshot.id,
+			contextRevision: snapshot.contextRevision,
+			createdAt: snapshot.createdAt,
+			understandingSummary: snapshot.draft.understanding.summary,
+			changeSummary: snapshot.draft.changeSummary,
+			hasQuestion: snapshot.draft.question !== null
+		}));
 		return {
 			mode: configuration.guidanceMode ? 'guided' : 'legacy',
 			case: requireCase(caseId),
 			events: repository.listEvents(caseId),
 			inputs: repository.listCaseInputs(caseId),
 			guidance: repository.getCurrentGuidance(caseId),
-			guidanceHistory: repository.listGuidance(caseId),
+			guidanceHistory,
 			contextRevision: context.contextRevision
 		};
 	}
@@ -93,6 +125,9 @@ export function createCaseService(dependencies: {
 			kind: 'evidence' as const,
 			id: evidence.id
 		}));
+		const communicationSources = caseRecord.evidence
+			.filter((evidence) => ['部门对接人', '接引同事'].includes(evidence.sourceLabel))
+			.map((evidence) => ({ kind: 'evidence' as const, id: evidence.id }));
 		return guidanceDraftSchema.parse({
 			understanding: {
 				summary: '固定宿舍演示样例：已有接引安排，但接引安排不能证明已经具备实际入住条件。',
@@ -105,14 +140,14 @@ export function createCaseService(dependencies: {
 					possibleMisreading: '把能够进入园区理解为已经能够入住。',
 					whyItMatters: '没有房间和钥匙信息时，到达后仍可能无法入住。',
 					howToCheck: '向人力或住宿管理方确认房间分配和钥匙交付。',
-					sources
+					sources: communicationSources
 				}
 			],
 			nextStep: {
 				kind: 'contact',
 				instruction: '联系人力或住宿管理方，确认房间和钥匙安排。',
 				why: '这两项信息直接决定到达后能否实际入住。',
-				contact: { label: '人力 / 住宿管理方', basis: 'case_material', sources },
+				contact: { label: '人力 / 住宿管理方', basis: 'suggested_role', sources: [] },
 				message:
 					'您好，我计划在 8 月 2 日 16:00 到达，目前已安排接引，但还没有收到房间和钥匙信息。请问房间是否已经分配，当天钥匙由谁交付？',
 				branches: [
@@ -123,6 +158,27 @@ export function createCaseService(dependencies: {
 			question: null,
 			changeSummary: '固定演示样例'
 		});
+	}
+
+	async function runGuidanceRecoverably(caseId: string): Promise<GuidanceRunResult> {
+		try {
+			return await guidanceRunner.run(caseId);
+		} catch {
+			const { contextRevision } = repository.getCaseContext(caseId);
+			return {
+				runId: randomUUID(),
+				outcome: 'failed',
+				guidance: null,
+				error: {
+					code: 'GUIDANCE_RUN_FAILED',
+					message: '材料/输入已保存，本轮未完成，可以稍后重试'
+				},
+				contextRevision,
+				modelCallCount: 0,
+				searchCount: 0,
+				repairCount: 0
+			};
+		}
 	}
 
 	return {
@@ -244,6 +300,14 @@ export function createCaseService(dependencies: {
 
 		getCase: view,
 
+		getGuidance(caseId: string, guidanceId: string): GuidanceSnapshot {
+			requireGuidanceMode();
+			requireCase(caseId);
+			const guidance = repository.getGuidance(caseId, guidanceId);
+			if (!guidance) throw new GuidanceReferenceError();
+			return guidance;
+		},
+
 		/**
 		 * 用户在证据轨上确认“这条是负责方明确回复过”。
 		 * 确认本身不重新分析：板上的判断仍由用户决定是否重新运行。
@@ -262,6 +326,7 @@ export function createCaseService(dependencies: {
 		},
 
 		appendCaseInput(caseId: string, input: z.input<typeof serviceCaseInputSchema>) {
+			requireGuidanceMode();
 			requireCase(caseId);
 			const parsed = serviceCaseInputSchema.parse(input);
 			const redacted = redactText(parsed.content, parsed.replacements);
@@ -271,17 +336,6 @@ export function createCaseService(dependencies: {
 				guidanceId: parsed.guidanceId,
 				requestId: parsed.requestId
 			});
-			if (saved.outcome === 'inserted') {
-				repository.appendEvent(caseId, {
-					type: 'case.input_added',
-					payload: {
-						inputId: saved.input.id,
-						kind: saved.input.kind,
-						guidanceId: saved.input.guidanceId,
-						redactionCount: redacted.findings.length
-					}
-				});
-			}
 			return {
 				...view(caseId),
 				outcome: saved.outcome,
@@ -312,15 +366,16 @@ export function createCaseService(dependencies: {
 		},
 
 		async runGuidance(caseId: string): Promise<CaseView & { run: GuidanceRunResult }> {
+			requireGuidanceMode();
 			requireCase(caseId);
-			const run = await guidanceRunner.run(caseId);
+			const run = await runGuidanceRecoverably(caseId);
 			return { ...view(caseId), run };
 		},
 
 		async runCase(caseId: string): Promise<CaseView & { run: AgentRunResult | GuidanceRunResult }> {
 			requireCase(caseId);
 			const run = configuration.guidanceMode
-				? await guidanceRunner.run(caseId)
+				? await runGuidanceRecoverably(caseId)
 				: await runner.run(caseId);
 			return { ...view(caseId), run };
 		},
@@ -350,7 +405,7 @@ export function createCaseService(dependencies: {
 				}
 			});
 			if (configuration.guidanceMode) {
-				const run = await guidanceRunner.run(caseId);
+				const run = await runGuidanceRecoverably(caseId);
 				return {
 					...view(caseId),
 					run,

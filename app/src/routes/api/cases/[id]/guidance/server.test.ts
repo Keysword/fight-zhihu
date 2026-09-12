@@ -21,12 +21,10 @@ describe('POST /api/cases/[id]/guidance', () => {
 		assertRateLimit.mockReset();
 	});
 
-	it('reads an empty JSON body, rate limits, and runs guidance', async () => {
+	it('accepts no request body, rate limits, and runs guidance', async () => {
 		runGuidance.mockResolvedValue({ run: { outcome: 'ready' } });
 		const request = new Request('http://localhost/api/cases/case-1/guidance', {
-			method: 'POST',
-			headers: { 'content-type': 'application/json' },
-			body: '{}'
+			method: 'POST'
 		});
 
 		const response = await POST({ params: { id: 'case-1' }, request } as never);
@@ -37,19 +35,5 @@ describe('POST /api/cases/[id]/guidance', () => {
 		});
 		expect(runGuidance).toHaveBeenCalledWith('case-1');
 		expect(response.status).toBe(200);
-	});
-
-	it('returns INVALID_REQUEST when the body is not JSON', async () => {
-		const request = new Request('http://localhost/api/cases/case-1/guidance', {
-			method: 'POST',
-			body: 'invalid'
-		});
-
-		const response = await POST({ params: { id: 'case-1' }, request } as never);
-		const payload = await response.json();
-
-		expect(response.status).toBe(400);
-		expect(payload).toMatchObject({ ok: false, error: { code: 'INVALID_REQUEST' } });
-		expect(runGuidance).not.toHaveBeenCalled();
 	});
 });

@@ -14,6 +14,7 @@ import {
 } from '$lib/server/cases/repository';
 import { ZhihuApiError, ZhihuRateLimitError } from '$lib/server/zhihu/client';
 import { RateLimitExceededError } from '$lib/server/rate-limit';
+import { GuidanceModeDisabledError } from '$lib/server/services/case-service';
 
 const MAX_BODY_BYTES = 100_000;
 
@@ -62,6 +63,10 @@ export function apiError(error: unknown): Response {
 		status = 400;
 		code = 'GUIDANCE_REFERENCE_INVALID';
 		message = '指导引用无效或不属于当前案例';
+	} else if (error instanceof GuidanceModeDisabledError) {
+		status = 404;
+		code = 'GUIDANCE_MODE_DISABLED';
+		message = error.message;
 	} else if (error instanceof ZhihuRateLimitError) {
 		status = 429;
 		code = 'ZHIHU_RATE_LIMIT';
