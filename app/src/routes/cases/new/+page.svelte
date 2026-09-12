@@ -52,7 +52,8 @@
 			const payload = await response.json();
 			if (!response.ok || !payload.ok) throw new Error(payload.error?.message ?? '案例创建失败');
 			caseId = payload.data.case.id;
-			await fetch(`${base}/api/cases/${caseId}/run`, { method: 'POST' });
+			const endpoint = payload.data.mode === 'guided' ? 'guidance' : 'run';
+			await fetch(`${base}/api/cases/${caseId}/${endpoint}`, { method: 'POST' });
 			await goto(resolve('/cases/[id]', { id: caseId }));
 		} catch (error) {
 			failure = error instanceof Error ? error.message : '案例创建失败';
@@ -66,9 +67,9 @@
 <main>
 	<header class="page-head">
 		<p class="kicker">新建案例</p>
-		<h1>把卡住的事讲给背景板</h1>
+		<h1>把卡住的事讲清楚一点</h1>
 		<p class="goal-line">
-			不必先整理得很漂亮。说明你想做到什么、哪里想不通，再贴上一两段原始信息。
+			不必先整理得很完整。说说你想做到什么、哪里想不通，我们先形成一版暂时理解，再找一个可以试的突破点。
 		</p>
 	</header>
 	<form
@@ -122,7 +123,7 @@
 			</select>
 		</div>
 		<div class="field">
-			<label for="evidence">先放一条证据（可选）</label><textarea
+			<label for="evidence">先放一段原材料（可选）</label><textarea
 				id="evidence"
 				bind:value={evidence}
 				maxlength="30000"
@@ -141,13 +142,12 @@
 				<div class="preview-box">{preview}</div>
 			</div>{/if}
 		<label class="fine-print"
-			><input type="checkbox" bind:checked={confirmed} /> 我已检查预览，确认可以把这些内容交给后台 Agent
-			分析。</label
+			><input type="checkbox" bind:checked={confirmed} /> 我已检查预览，确认可以用这些内容帮助梳理。</label
 		>
 		{#if failure}<div class="error-box" role="alert">{failure}</div>{/if}
 		<div style="margin-top:24px">
 			<button class="button" type="submit" disabled={!confirmed || loading}
-				>{loading ? '正在建立背景板…' : '建立背景板并开始判断'}</button
+				>{loading ? '正在整理…' : '保存并寻找突破点'}</button
 			>
 		</div>
 	</form>
