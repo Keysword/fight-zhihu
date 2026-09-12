@@ -8,6 +8,8 @@ import { ModelClientError, ModelConfigurationError } from '$lib/server/agent/mod
 import {
 	CaseNotFoundError,
 	EvidenceNotFoundError,
+	GuidanceReferenceError,
+	IdempotencyConflictError,
 	RevisionConflictError
 } from '$lib/server/cases/repository';
 import { ZhihuApiError, ZhihuRateLimitError } from '$lib/server/zhihu/client';
@@ -52,6 +54,14 @@ export function apiError(error: unknown): Response {
 		status = 409;
 		code = 'REVISION_CONFLICT';
 		message = error.message;
+	} else if (error instanceof IdempotencyConflictError) {
+		status = 409;
+		code = 'IDEMPOTENCY_CONFLICT';
+		message = '该请求标识已用于不同的输入';
+	} else if (error instanceof GuidanceReferenceError) {
+		status = 400;
+		code = 'GUIDANCE_REFERENCE_INVALID';
+		message = '指导引用无效或不属于当前案例';
 	} else if (error instanceof ZhihuRateLimitError) {
 		status = 429;
 		code = 'ZHIHU_RATE_LIMIT';
