@@ -3,7 +3,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { z } from 'zod';
 
 import { caseInputSchema, guidanceDraftSchema } from '$lib/domain/guidance';
-import type { CaseInput, GuidanceDraft, GuidanceSnapshot } from '$lib/domain/guidance';
+import type { CaseInput, GuidanceDraft, GuidanceSnapshot, SourceRef } from '$lib/domain/guidance';
 import { backgroundBoardSchema, evidenceSchema, externalClueSchema } from '$lib/domain/schemas';
 import type {
 	AgentEvent,
@@ -112,6 +112,61 @@ export class GuidanceRunConflictError extends Error {
 	constructor(runId: string) {
 		super(`Guidance 运行 ${runId} 已用于不同的快照`);
 		this.name = 'GuidanceRunConflictError';
+	}
+}
+
+export class GuidanceReferenceError extends Error {
+	constructor() {
+		super('指导引用无效或不属于当前案例');
+		this.name = 'GuidanceReferenceError';
+	}
+}
+
+function guidanceReferences(draft: GuidanceDraft): SourceRef[] {
+	return [
+		...draft.understanding.sources,
+		...draft.communicationChecks.flatMap((check) => check.sources),
+		...(draft.nextStep?.contact?.sources ?? [])
+	];
+}
+
+function validateGuidanceReferences(
+	database: DatabaseSync,
+	caseId: string,
+	draft: GuidanceDraft,
+	externalClues: ExternalClue[]
+): void {
+	const externalIds = new Set<string>();
+	for (const clue of externalClues) {
+		if (externalIds.has(clue.id)) throw new GuidanceReferenceError();
+		externalIds.add(clue.id);
+	}
+
+	const evidenceIds = new Set(
+		(
+			database
+				.prepare('SELECT id FROM evidence WHERE case_id = ?')
+				.all(caseId) as unknown as Array<{
+				id: string;
+			}>
+		).map((row) => row.id)
+	);
+	const inputIds = new Set(
+		(
+			database
+				.prepare('SELECT id FROM case_inputs WHERE case_id = ?')
+				.all(caseId) as unknown as Array<{ id: string }>
+		).map((row) => row.id)
+	);
+
+	for (const source of guidanceReferences(draft)) {
+		const valid =
+			source.kind === 'evidence'
+				? evidenceIds.has(source.id)
+				: source.kind === 'input'
+					? inputIds.has(source.id)
+					: externalIds.has(source.id);
+		if (!valid) throw new GuidanceReferenceError();
 	}
 }
 
@@ -332,7 +387,7 @@ export function createCaseRepository(path: string): CaseRepository {
 					const guidance = database
 						.prepare('SELECT 1 FROM guidance_snapshots WHERE case_id = ? AND id = ?')
 						.get(caseId, parsed.guidanceId);
-					if (!guidance) throw new Error('指导快照与案例不一致或不存在');
+					if (!guidance) throw new GuidanceReferenceError();
 				}
 
 				const id = randomUUID();
@@ -402,6 +457,7 @@ export function createCaseRepository(path: string): CaseRepository {
 				requireCase(caseId);
 				const draft = guidanceDraftSchema.parse(inputDraft);
 				const externalClues = z.array(externalClueSchema).parse(inputExternalClues);
+				validateGuidanceReferences(database, caseId, draft, externalClues);
 				const existingRow = database
 					.prepare(
 						'SELECT id, case_id, run_id, context_revision, draft_json, external_clues_json, created_at FROM guidance_snapshots WHERE run_id = ?'

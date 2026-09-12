@@ -4,11 +4,12 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import type { CaseInputRequest, GuidanceDraft } from '$lib/domain/guidance';
+import type { CaseInputRequest, GuidanceDraft, SourceRef } from '$lib/domain/guidance';
 import type { BackgroundBoard, ExternalClue } from '$lib/domain/types';
 import { openDatabase } from '$lib/server/db';
 import {
 	createCaseRepository,
+	GuidanceReferenceError,
 	GuidanceRunConflictError,
 	IdempotencyConflictError,
 	RevisionConflictError
@@ -71,6 +72,79 @@ function externalClue(id = 'clue-1'): ExternalClue {
 		relevance: '可用于核对流程',
 		warning: '请以当期通知为准'
 	};
+}
+
+function sourcedGuidanceDraft({
+	understanding = [],
+	communication = [],
+	contact = []
+}: {
+	understanding?: SourceRef[];
+	communication?: SourceRef[];
+	contact?: SourceRef[];
+}): GuidanceDraft {
+	return {
+		understanding: { summary: '结合来源理解事项', openPoint: null, sources: understanding },
+		communicationChecks: [
+			{
+				observation: '对方只说了大致流程',
+				possibleMisreading: '可能把建议当成了确定通知',
+				whyItMatters: '会影响下一步安排',
+				howToCheck: '核对原始记录',
+				sources: communication
+			}
+		],
+		nextStep: {
+			kind: 'contact',
+			instruction: '联系负责人确认',
+			why: '需要核对最新安排',
+			contact: { label: '事项负责人', basis: 'case_material', sources: contact },
+			message: null,
+			branches: []
+		},
+		question: null,
+		changeSummary: null
+	};
+}
+
+function guidanceDraftWithUnderstandingSource(source: SourceRef): GuidanceDraft {
+	return {
+		...guidanceDraft('引用来源的理解'),
+		understanding: {
+			summary: '引用来源的理解',
+			openPoint: null,
+			sources: [source]
+		}
+	};
+}
+
+function expectGuidanceReferenceError(action: () => unknown): GuidanceReferenceError {
+	let failure: unknown;
+	try {
+		action();
+	} catch (error) {
+		failure = error;
+	}
+	expect(failure).toMatchObject({ name: 'GuidanceReferenceError' });
+	expect(failure).toBeInstanceOf(GuidanceReferenceError);
+	return failure as GuidanceReferenceError;
+}
+
+function expectGuidanceSaveRejectedWithoutMutation(
+	repo: ReturnType<typeof guidanceRepository>,
+	caseId: string,
+	contextRevision: number,
+	draft: GuidanceDraft,
+	externalClues: ExternalClue[],
+	runId: string
+): void {
+	const beforeContext = repo.getCaseContext(caseId);
+	const beforeHistory = repo.listGuidance(caseId);
+	expectGuidanceReferenceError(() =>
+		repo.saveGuidance(caseId, contextRevision, draft, externalClues, runId)
+	);
+	expect(repo.getCaseContext(caseId)).toEqual(beforeContext);
+	expect(repo.listGuidance(caseId)).toEqual(beforeHistory);
 }
 
 describe('case repository', () => {
@@ -278,6 +352,207 @@ describe('case repository', () => {
 		repo.close();
 	});
 
+	it('saves guidance whose evidence, input, and external references belong to their declared kinds', () => {
+		const repo = guidanceRepository(temporaryDatabasePath());
+		const created = repo.createCase({ title: '事项', goal: '解决问题', confusion: '背景不清' });
+		const evidence = repo.appendEvidence(created.id, {
+			kind: 'message',
+			content: '群里的原始消息',
+			sourceLabel: '群聊',
+			occurredAt: null
+		});
+		const input = repo.appendCaseInput(created.id, {
+			kind: 'context',
+			content: '用户补充的背景',
+			guidanceId: null,
+			requestId: '12000000-0000-4000-8000-000000000001'
+		});
+		const clue = externalClue('external-guide');
+		const draft = sourcedGuidanceDraft({
+			understanding: [{ kind: 'evidence', id: evidence.id }],
+			communication: [
+				{ kind: 'input', id: input.input.id },
+				{ kind: 'external', id: clue.id }
+			],
+			contact: [{ kind: 'evidence', id: evidence.id }]
+		});
+
+		const saved = repo.saveGuidance(
+			created.id,
+			2,
+			draft,
+			[clue],
+			'12000000-0000-4000-8000-000000000002'
+		);
+
+		expect(saved.status).toBe('current');
+		expect(saved.snapshot.draft).toEqual(draft);
+		expect(repo.getCurrentGuidance(created.id)).toEqual(saved.snapshot);
+		repo.close();
+	});
+
+	it('rejects evidence and input references owned by another case without changing guidance state', () => {
+		const repo = guidanceRepository(temporaryDatabasePath());
+		const target = repo.createCase({ title: '事项 A', goal: '解决问题', confusion: '背景不清' });
+		const other = repo.createCase({ title: '事项 B', goal: '解决问题', confusion: '背景不清' });
+		const current = repo.saveGuidance(
+			target.id,
+			0,
+			guidanceDraft('已有建议'),
+			[],
+			'13000000-0000-4000-8000-000000000001'
+		);
+		const otherEvidence = repo.appendEvidence(other.id, {
+			kind: 'message',
+			content: '另一事项的消息',
+			sourceLabel: '群聊',
+			occurredAt: null
+		});
+		const otherInput = repo.appendCaseInput(other.id, {
+			kind: 'context',
+			content: '另一事项的补充',
+			guidanceId: null,
+			requestId: '13000000-0000-4000-8000-000000000002'
+		});
+
+		for (const [index, source] of [
+			{ kind: 'evidence', id: otherEvidence.id },
+			{ kind: 'input', id: otherInput.input.id }
+		].entries()) {
+			expectGuidanceSaveRejectedWithoutMutation(
+				repo,
+				target.id,
+				0,
+				guidanceDraftWithUnderstandingSource(source as SourceRef),
+				[],
+				`13000000-0000-4000-8000-00000000000${index + 3}`
+			);
+		}
+
+		expect(repo.getCurrentGuidance(target.id)).toEqual(current.snapshot);
+		repo.close();
+	});
+
+	it('rejects dangling external references from every guidance section without changing state', () => {
+		const repo = guidanceRepository(temporaryDatabasePath());
+		const created = repo.createCase({ title: '事项', goal: '解决问题', confusion: '背景不清' });
+		const evidence = repo.appendEvidence(created.id, {
+			kind: 'message',
+			content: '用于满足本地来源约束',
+			sourceLabel: '群聊',
+			occurredAt: null
+		});
+		const localSource: SourceRef = { kind: 'evidence', id: evidence.id };
+		const current = repo.saveGuidance(
+			created.id,
+			1,
+			guidanceDraft('已有建议'),
+			[],
+			'14000000-0000-4000-8000-000000000001'
+		);
+		const missingSource: SourceRef = { kind: 'external', id: 'missing-clue' };
+		const invalidDrafts = [
+			sourcedGuidanceDraft({
+				understanding: [missingSource],
+				communication: [localSource],
+				contact: [localSource]
+			}),
+			sourcedGuidanceDraft({
+				understanding: [localSource],
+				communication: [localSource, missingSource],
+				contact: [localSource]
+			}),
+			sourcedGuidanceDraft({
+				understanding: [localSource],
+				communication: [localSource],
+				contact: [localSource, missingSource]
+			})
+		];
+
+		invalidDrafts.forEach((draft, index) => {
+			expectGuidanceSaveRejectedWithoutMutation(
+				repo,
+				created.id,
+				1,
+				draft,
+				[externalClue('different-clue')],
+				`14000000-0000-4000-8000-00000000000${index + 2}`
+			);
+		});
+
+		expect(repo.getCurrentGuidance(created.id)).toEqual(current.snapshot);
+		repo.close();
+	});
+
+	it('does not accept an id from a different source kind', () => {
+		const repo = guidanceRepository(temporaryDatabasePath());
+		const created = repo.createCase({ title: '事项', goal: '解决问题', confusion: '背景不清' });
+		const evidence = repo.appendEvidence(created.id, {
+			kind: 'message',
+			content: '原始消息',
+			sourceLabel: '群聊',
+			occurredAt: null
+		});
+		const input = repo.appendCaseInput(created.id, {
+			kind: 'context',
+			content: '用户补充',
+			guidanceId: null,
+			requestId: '15000000-0000-4000-8000-000000000001'
+		});
+		const current = repo.saveGuidance(
+			created.id,
+			2,
+			guidanceDraft('已有建议'),
+			[],
+			'15000000-0000-4000-8000-000000000002'
+		);
+		const clue = externalClue('external-only');
+		const wrongKindReferences: SourceRef[] = [
+			{ kind: 'input', id: evidence.id },
+			{ kind: 'evidence', id: input.input.id },
+			{ kind: 'evidence', id: clue.id }
+		];
+
+		wrongKindReferences.forEach((source, index) => {
+			expectGuidanceSaveRejectedWithoutMutation(
+				repo,
+				created.id,
+				2,
+				guidanceDraftWithUnderstandingSource(source),
+				[clue],
+				`15000000-0000-4000-8000-00000000000${index + 3}`
+			);
+		});
+
+		expect(repo.getCurrentGuidance(created.id)).toEqual(current.snapshot);
+		repo.close();
+	});
+
+	it('rejects duplicate external clue ids without changing guidance state', () => {
+		const repo = guidanceRepository(temporaryDatabasePath());
+		const created = repo.createCase({ title: '事项', goal: '解决问题', confusion: '背景不清' });
+		const current = repo.saveGuidance(
+			created.id,
+			0,
+			guidanceDraft('已有建议'),
+			[],
+			'16000000-0000-4000-8000-000000000001'
+		);
+		const clue = externalClue('duplicate-clue');
+
+		expectGuidanceSaveRejectedWithoutMutation(
+			repo,
+			created.id,
+			0,
+			guidanceDraft('新建议'),
+			[clue, { ...clue, title: '重复标识的另一条线索' }],
+			'16000000-0000-4000-8000-000000000002'
+		);
+
+		expect(repo.getCurrentGuidance(created.id)).toEqual(current.snapshot);
+		repo.close();
+	});
+
 	it('invalidates current guidance only when evidence confirmation changes', () => {
 		const repo = guidanceRepository(temporaryDatabasePath());
 		const created = repo.createCase({ title: '事项', goal: '解决问题', confusion: '背景不清' });
@@ -394,14 +669,23 @@ describe('case repository', () => {
 
 		expect(repo.getGuidance(secondCase.id, firstGuidance.snapshot.id)).toBeNull();
 		expect(repo.listGuidance(secondCase.id)).toEqual([]);
-		expect(() =>
+		const crossCaseError = expectGuidanceReferenceError(() =>
 			repo.appendCaseInput(secondCase.id, {
 				kind: 'action_result',
 				content: '已经按建议执行',
 				guidanceId: firstGuidance.snapshot.id,
 				requestId: '30000000-0000-4000-8000-000000000002'
 			})
-		).toThrow(/指导.*案例/);
+		);
+		const missingError = expectGuidanceReferenceError(() =>
+			repo.appendCaseInput(secondCase.id, {
+				kind: 'action_result',
+				content: '已经按不存在的建议执行',
+				guidanceId: 'missing-guidance',
+				requestId: '30000000-0000-4000-8000-000000000003'
+			})
+		);
+		expect(crossCaseError.message).toBe(missingError.message);
 		expect(repo.listCaseInputs(secondCase.id)).toEqual([]);
 		expect(repo.getCaseContext(secondCase.id)).toEqual({
 			contextRevision: 0,
