@@ -171,7 +171,7 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 
 		try {
 			const inputs = repository.listCaseInputs(caseId);
-			const guidanceHistory = repository.listGuidance(caseId);
+			const guidanceHistory = repository.listGuidance(caseId, 1);
 			const latestGuidance = guidanceHistory.at(-1) ?? null;
 			const referencedGuidance = [
 				...new Set(
