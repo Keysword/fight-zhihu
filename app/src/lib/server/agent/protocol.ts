@@ -92,14 +92,22 @@ function extractJson(response: string): string {
 	throw new AgentProtocolError('模型输出的 JSON 对象没有闭合');
 }
 
-export function parseAgentAction(response: string): AgentAction {
-	let value: unknown;
+/**
+ * 解析模型输出中的第一个完整 JSON 对象。
+ *
+ * 所有模型动作协议都经由这里复用同一套平衡花括号扫描规则。
+ */
+export function parseJsonObject(response: string): unknown {
 	try {
-		value = JSON.parse(extractJson(response));
+		return JSON.parse(extractJson(response));
 	} catch (error) {
 		if (error instanceof AgentProtocolError) throw error;
 		throw new AgentProtocolError('模型输出不是有效 JSON', error);
 	}
+}
+
+export function parseAgentAction(response: string): AgentAction {
+	const value = parseJsonObject(response);
 
 	const result = agentActionSchema.safeParse(value);
 	if (!result.success) {

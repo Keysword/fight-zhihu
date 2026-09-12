@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseAgentAction, AgentProtocolError } from './protocol';
+import { parseAgentAction, AgentProtocolError, parseJsonObject } from './protocol';
 
 describe('agent protocol', () => {
+	it('exports the balanced JSON parser used by model action protocols', () => {
+		const object = JSON.stringify({ summary: '包含 {花括号} 和 "引号"' });
+		expect(parseJsonObject(`开场 ${object} 结尾`)).toEqual({
+			summary: '包含 {花括号} 和 "引号"'
+		});
+	});
+
 	it('accepts direct JSON actions', () => {
 		expect(parseAgentAction('{"type":"search_zhihu","query":"新人 宿舍","count":3}')).toEqual({
 			type: 'search_zhihu',
