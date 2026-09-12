@@ -278,6 +278,48 @@ describe('case repository', () => {
 		repo.close();
 	});
 
+	it('invalidates current guidance only when evidence confirmation changes', () => {
+		const repo = guidanceRepository(temporaryDatabasePath());
+		const created = repo.createCase({ title: '事项', goal: '解决问题', confusion: '背景不清' });
+		const evidence = repo.appendEvidence(created.id, {
+			kind: 'message',
+			content: '待确认的消息',
+			sourceLabel: '群聊',
+			occurredAt: null
+		});
+		const beforeFirstConfirmation = repo.saveGuidance(
+			created.id,
+			1,
+			guidanceDraft('待确认证据的指导'),
+			[],
+			'11000000-0000-4000-8000-000000000001'
+		);
+
+		expect(repo.confirmEvidence(created.id, evidence.id).confirmation).toBe('official');
+		expect(repo.getCaseContext(created.id)).toEqual({
+			contextRevision: 2,
+			currentGuidanceId: null
+		});
+		expect(repo.getGuidance(created.id, beforeFirstConfirmation.snapshot.id)).toEqual(
+			beforeFirstConfirmation.snapshot
+		);
+
+		const afterFirstConfirmation = repo.saveGuidance(
+			created.id,
+			2,
+			guidanceDraft('已确认证据的指导'),
+			[],
+			'11000000-0000-4000-8000-000000000002'
+		);
+		expect(repo.confirmEvidence(created.id, evidence.id).confirmation).toBe('official');
+		expect(repo.getCaseContext(created.id)).toEqual({
+			contextRevision: 2,
+			currentGuidanceId: afterFirstConfirmation.snapshot.id
+		});
+		expect(repo.getCurrentGuidance(created.id)).toEqual(afterFirstConfirmation.snapshot);
+		repo.close();
+	});
+
 	it('stores stale runs as superseded history without replacing newer current guidance', () => {
 		const repo = guidanceRepository(temporaryDatabasePath());
 		const created = repo.createCase({ title: '事项', goal: '解决问题', confusion: '背景不清' });

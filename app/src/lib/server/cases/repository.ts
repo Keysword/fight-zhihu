@@ -532,16 +532,19 @@ export function createCaseRepository(path: string): CaseRepository {
 			try {
 				requireCase(caseId);
 				const result = database
-					.prepare('UPDATE evidence SET confirmation = ? WHERE id = ? AND case_id = ?')
-					.run('official', evidenceId, caseId);
-				if (Number(result.changes) !== 1) throw new EvidenceNotFoundError(evidenceId);
-				database
 					.prepare(
-						'UPDATE cases SET context_revision = context_revision + 1, current_guidance_id = NULL, updated_at = ? WHERE id = ?'
+						'UPDATE evidence SET confirmation = ? WHERE id = ? AND case_id = ? AND confirmation <> ?'
 					)
-					.run(now, caseId);
+					.run('official', evidenceId, caseId, 'official');
 				const evidence = getEvidence(caseId).find((item) => item.id === evidenceId);
 				if (!evidence) throw new EvidenceNotFoundError(evidenceId);
+				if (Number(result.changes) === 1) {
+					database
+						.prepare(
+							'UPDATE cases SET context_revision = context_revision + 1, current_guidance_id = NULL, updated_at = ? WHERE id = ?'
+						)
+						.run(now, caseId);
+				}
 				database.exec('COMMIT');
 				return evidence;
 			} catch (error) {
