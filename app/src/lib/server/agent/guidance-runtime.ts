@@ -128,7 +128,12 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 	const { repository, model, zhihu } = dependencies;
 	const now = dependencies.now ?? (() => performance.now());
 	const maxContextCharacters = dependencies.maxContextCharacters ?? DEFAULT_MAX_CONTEXT_CHARACTERS;
-	const inFlight = new Map<string, Promise<GuidanceRunResult>>();
+	interface CaseFlightState {
+		activeRevision: number;
+		activePromise: Promise<GuidanceRunResult>;
+		queuedPromise: Promise<GuidanceRunResult> | null;
+	}
+	const inFlight = new Map<string, CaseFlightState>();
 
 	async function execute(caseId: string): Promise<GuidanceRunResult> {
 		const runId = randomUUID();
@@ -327,17 +332,20 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 							action.type === 'search_zhihu'
 								? await zhihu.searchZhihu(query, action.count)
 								: await zhihu.searchGlobal(query, action.count);
+						const canonicalClues: ExternalClue[] = [];
 						for (const item of clues) {
-							if (!gatheredClues.has(item.id)) gatheredClues.set(item.id, item);
+							if (gatheredClues.has(item.id)) continue;
+							gatheredClues.set(item.id, item);
+							canonicalClues.push(item);
 						}
 						searches.push({
 							index: searches.length + 1,
 							type: action.type,
 							durationMs: Math.round(now() - searchStartedAt),
 							outcome: 'ok',
-							resultCount: clues.length
+							resultCount: canonicalClues.length
 						});
-						messages.push(toolMessage({ code: 'SEARCH_RESULTS', clues }));
+						messages.push(toolMessage({ code: 'SEARCH_RESULTS', clues: canonicalClues }));
 					} catch {
 						searches.push({
 							index: searches.length + 1,
@@ -437,21 +445,54 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 		}
 	}
 
+	function clearSettledFlight(
+		caseId: string,
+		state: CaseFlightState,
+		promise: Promise<GuidanceRunResult>
+	): void {
+		const clear = () => {
+			if (state.activePromise === promise && state.queuedPromise === null) {
+				inFlight.delete(caseId);
+			}
+		};
+		void promise.then(clear, clear);
+	}
+
+	function startFlight(caseId: string, contextRevision: number): Promise<GuidanceRunResult> {
+		const promise = execute(caseId);
+		const state: CaseFlightState = {
+			activeRevision: contextRevision,
+			activePromise: promise,
+			queuedPromise: null
+		};
+		inFlight.set(caseId, state);
+		clearSettledFlight(caseId, state, promise);
+		return promise;
+	}
+
+	function queueLatestFlight(caseId: string, state: CaseFlightState): Promise<GuidanceRunResult> {
+		if (state.queuedPromise) return state.queuedPromise;
+		const predecessor = state.activePromise;
+		const startLatest = () => {
+			state.activeRevision = repository.getCaseContext(caseId).contextRevision;
+			state.activePromise = queuedPromise;
+			state.queuedPromise = null;
+			return execute(caseId);
+		};
+		const queuedPromise = predecessor.then(startLatest, startLatest);
+		state.queuedPromise = queuedPromise;
+		clearSettledFlight(caseId, state, queuedPromise);
+		return queuedPromise;
+	}
+
 	return {
 		run(caseId: string): Promise<GuidanceRunResult> {
-			const active = inFlight.get(caseId);
-			if (active) return active;
-			const promise = execute(caseId);
-			inFlight.set(caseId, promise);
-			void promise.then(
-				() => {
-					if (inFlight.get(caseId) === promise) inFlight.delete(caseId);
-				},
-				() => {
-					if (inFlight.get(caseId) === promise) inFlight.delete(caseId);
-				}
-			);
-			return promise;
+			const requestedRevision = repository.getCaseContext(caseId).contextRevision;
+			const state = inFlight.get(caseId);
+			if (!state) return startFlight(caseId, requestedRevision);
+			if (state.queuedPromise) return state.queuedPromise;
+			if (state.activeRevision === requestedRevision) return state.activePromise;
+			return queueLatestFlight(caseId, state);
 		}
 	};
 }

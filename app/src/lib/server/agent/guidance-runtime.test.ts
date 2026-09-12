@@ -198,6 +198,36 @@ describe('guidance runtime', () => {
 		expect(result.guidance?.externalClues.map((item) => item.id)).toEqual(['same-id', 'second-id']);
 	});
 
+	it('feeds the model the same canonical clue payload that it later persists', async () => {
+		const repo = repository();
+		const created = createCase(repo);
+		const first = { ...clue('shared-id'), excerpt: 'FIRST_CANONICAL_EXCERPT' };
+		const conflictingDuplicate = {
+			...clue('shared-id', 'global'),
+			excerpt: 'SECOND_CONFLICTING_EXCERPT'
+		};
+		const zhihu = {
+			searchZhihu: vi.fn(async () => [first]),
+			searchGlobal: vi.fn(async () => [conflictingDuplicate])
+		};
+		const model = scriptedModel([
+			JSON.stringify({ type: 'search_zhihu', query: '住宿', count: 1 }),
+			JSON.stringify({ type: 'search_global', query: '住宿', count: 1 }),
+			provide(draft({ sources: [{ kind: 'external', id: first.id }] }))
+		]);
+
+		const result = await createGuidanceRuntime({ repository: repo, model, zhihu }).run(created.id);
+
+		const finalModelContext = model.calls[2]?.map((message) => message.content).join('\n') ?? '';
+		expect(finalModelContext).toContain('FIRST_CANONICAL_EXCERPT');
+		expect(finalModelContext).not.toContain('SECOND_CONFLICTING_EXCERPT');
+		expect(result.guidance?.externalClues).toEqual([first]);
+		expect(finishedEvents(repo, created.id)[0]?.payload.searches).toEqual([
+			expect.objectContaining({ outcome: 'ok', resultCount: 1 }),
+			expect.objectContaining({ outcome: 'ok', resultCount: 0 })
+		]);
+	});
+
 	it('continues after search errors including rate limits', async () => {
 		const repo = repository();
 		const created = createCase(repo);
@@ -401,6 +431,48 @@ describe('guidance runtime', () => {
 		expect(failed).toMatchObject({ outcome: 'failed', error: { code: 'MODEL_CALL_FAILED' } });
 		expect(retried.outcome).toBe('ready');
 		expect(failedModel.calls).toHaveLength(2);
+	});
+
+	it('queues one latest-revision run when feedback arrives during an active run', async () => {
+		const repo = repository();
+		const created = createCase(repo);
+		const releases: Array<(value: string) => void> = [];
+		const model: ModelClient & { calls: ModelMessage[][] } = {
+			calls: [],
+			complete(messages) {
+				this.calls.push(structuredClone(messages));
+				return new Promise<string>((resolve) => releases.push(resolve));
+			}
+		};
+		const runtime = createGuidanceRuntime({ repository: repo, model, zhihu: zhihuClient() });
+
+		const oldRun = runtime.run(created.id);
+		expect(model.calls).toHaveLength(1);
+		repo.appendCaseInput(created.id, {
+			kind: 'correction',
+			content: '物业已经联系不上，请换一个方向。',
+			guidanceId: null,
+			requestId: crypto.randomUUID()
+		});
+		const latestRun = runtime.run(created.id);
+
+		expect(latestRun).not.toBe(oldRun);
+		expect(model.calls).toHaveLength(1);
+		releases.shift()?.(provide(draft({ summary: '旧版本理解' })));
+		await expect(oldRun).resolves.toMatchObject({ outcome: 'superseded', contextRevision: 0 });
+		await vi.waitFor(() => expect(model.calls).toHaveLength(2));
+		expect(model.calls[1]?.map((message) => message.content).join('\n')).toContain(
+			'物业已经联系不上'
+		);
+		releases.shift()?.(provide(draft({ summary: '已经根据新限制调整方向' })));
+
+		await expect(latestRun).resolves.toMatchObject({
+			outcome: 'ready',
+			contextRevision: 1,
+			guidance: { draft: { understanding: { summary: '已经根据新限制调整方向' } } }
+		});
+		expect(repo.getCurrentGuidance(created.id)?.contextRevision).toBe(1);
+		expect(finishedEvents(repo, created.id)).toHaveLength(2);
 	});
 
 	it('returns superseded when input, evidence, or first confirmation changes during the model call', async () => {
