@@ -1,0 +1,54 @@
+{
+  "understanding": {
+    "summary": "目前只知道对方表示会代为申请并说明天有人接，实际住宿是否落实、房间号和领取时间均未明确。",
+    "openPoint": "申请是否已成功、是否有房间号和入住时间，都不清楚。",
+    "sources": [
+      {
+        "kind": "evidence",
+        "id": "72fe3966-8f02-4240-86a2-78134bc0dfbe"
+      }
+    ]
+  },
+  "communicationChecks": [
+    {
+      "observation": "材料中只出现了会代为申请并说明天有人接的回复。",
+      "possibleMisreading": "这可能被理解成住宿已经安排完成。",
+      "whyItMatters": "会影响用户是否需要另外准备到达后的临时住宿安排。",
+      "howToCheck": "向对接人确认是否已有房间号和入住通知，而不只是先代为申请的表述。",
+      "sources": [
+        {
+          "kind": "evidence",
+          "id": "72fe3966-8f02-4240-86a2-78134bc0dfbe"
+        }
+      ]
+    }
+  ],
+  "nextStep": {
+    "kind": "contact",
+    "instruction": "向同一对接人确认目前申请是否已落实为具体住宿安排。",
+    "why": "能直接核实明天能否入住，以及是否还需要其他准备。",
+    "contact": {
+      "label": "部门对接人（代为申请的人）",
+      "basis": "case_material",
+      "sources": [
+        {
+          "kind": "evidence",
+          "id": "72fe3966-8f02-4240-86a2-78134bc0dfbe"
+        }
+      ]
+    },
+    "message": "请问你之前帮我申请的住宿，现在是否已经有确认的房间号和入住时间了？明天到达后还需要办什么手续吗？",
+    "branches": [
+      {
+        "when": "对方给出房间号或明确时间",
+        "then": "按此安排追踪并提前准备到达事宜。"
+      },
+      {
+        "when": "对方仍未给出具体安排",
+        "then": "提前准备临时住宿方案，避免当天无人接应。"
+      }
+    ]
+  },
+  "question": "对方是否说到了明天具体接你的人或地点安排？",
+  "changeSummary": null
+}

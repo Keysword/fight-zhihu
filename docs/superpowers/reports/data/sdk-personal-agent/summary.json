@@ -1,0 +1,142 @@
+{
+  "meta": {
+    "commit": "754843c",
+    "sdkVersion": "7.15.0",
+    "sdkVersionNote": "openai v7 不导出 VERSION 常量，行级 sdkVersion 字段在此批次为空；版本从锁定的 package.json 补记",
+    "provider": "微信开放平台 OpenAI 兼容端点（chatapi.weixin.qq.com/openai/v1），模型 Deepseek-v4-flash（名称区分大小写）",
+    "confounding": "A1（OpenCode 臂）未配置 OPENCODE_SERVER_URL/密码，无法执行；A 比较实际为 legacy-http vs sdk，同一供应商/端点/模型/密钥，无传输外混杂",
+    "warmups": [
+      {
+        "arm": "legacy-http-warmup",
+        "totalMs": 2540
+      },
+      {
+        "arm": "sdk-nonstream-warmup",
+        "totalMs": 2985
+      }
+    ]
+  },
+  "experimentA_transport": {
+    "design": "冻结 prompt 单次请求 × 6 场景 × 3 次 × 2 臂，串行交错；返回内容跑真实协议解析",
+    "legacy-http": {
+      "n": 18,
+      "success": 16,
+      "successRate": 0.889,
+      "failed": 0,
+      "protocolFail": 2,
+      "cancelled": 0,
+      "successP50Ms": 5593,
+      "successP95Ms": 6990,
+      "allP50Ms": 5593,
+      "allP95Ms": 6990,
+      "maxMs": 7270,
+      "modelAttempts": 18,
+      "searchRequests": 0,
+      "searchCacheHits": 0,
+      "repairs": 0,
+      "errorCodes": {
+        "模型输出的 JSON 对象没有闭合": 2
+      }
+    },
+    "sdk-nonstream": {
+      "n": 18,
+      "success": 14,
+      "successRate": 0.778,
+      "failed": 0,
+      "protocolFail": 4,
+      "cancelled": 0,
+      "successP50Ms": 5011,
+      "successP95Ms": 6590,
+      "allP50Ms": 5327,
+      "allP95Ms": 7310,
+      "maxMs": 9726,
+      "modelAttempts": 18,
+      "searchRequests": 0,
+      "searchCacheHits": 0,
+      "repairs": 0,
+      "errorCodes": {
+        "模型输出的 JSON 对象没有闭合": 4
+      }
+    }
+  },
+  "experimentB_policy": {
+    "design": "完整端到端运行 × 6 场景 × 2 次 × 2 臂（同一 SDK 传输）；缓存关闭；失败样本不丢弃",
+    "sdk-nonstream-legacypolicy": {
+      "n": 12,
+      "success": 11,
+      "successRate": 0.917,
+      "failed": 1,
+      "protocolFail": 0,
+      "cancelled": 0,
+      "successP50Ms": 9961,
+      "successP95Ms": 17181,
+      "allP50Ms": 9961,
+      "allP95Ms": 14557,
+      "maxMs": 17181,
+      "modelAttempts": 22,
+      "searchRequests": 0,
+      "searchCacheHits": 0,
+      "repairs": 10,
+      "errorCodes": {
+        "GUIDANCE_INVALID": 1
+      }
+    },
+    "sdk-nonstream-fast": {
+      "n": 12,
+      "success": 11,
+      "successRate": 0.917,
+      "failed": 1,
+      "protocolFail": 0,
+      "cancelled": 0,
+      "successP50Ms": 13023,
+      "successP95Ms": 23728,
+      "allP50Ms": 13023,
+      "allP95Ms": 17837,
+      "maxMs": 23728,
+      "modelAttempts": 22,
+      "searchRequests": 0,
+      "searchCacheHits": 0,
+      "repairs": 10,
+      "errorCodes": {
+        "GUIDANCE_INVALID": 1
+      }
+    }
+  },
+  "experimentC_search": {
+    "status": "真实搜索部分未完成：缺少 ZHIHU_ACCESS_SECRET（项目 .env 中该键为空，用户未提供）",
+    "realSearchRequests": 0,
+    "coveredByFixtures": [
+      "搜索超时不中断本轮",
+      "429 不循环",
+      "整轮取消立即停止搜索",
+      "缓存命中/案例隔离/TTL/失败不缓存（单测）",
+      "新版输入替代旧运行（E2E guided+guided-sdk）"
+    ]
+  },
+  "ledger": {
+    "modelRequests": 94,
+    "searchRequests": 0,
+    "updatedAt": "2026-09-13T18:12:37.955Z",
+    "diagnosisNotes": "key1(（脱敏代号）) 对 Deepseek-v4-flash 返回 401；key2(（脱敏代号）) 有效；模型名区分大小写"
+  },
+  "gates": {
+    "absoluteTargets": {
+      "successP50Under30s": true,
+      "successP95Under60s": true,
+      "fastRunsEndNearBudget": "fast 最长 23.7s，全部在 60s 预算内明确结束"
+    },
+    "relativeTarget": {
+      "p50DropAtLeast30PercentVsSameBatchBaseline": false,
+      "note": "fast 相对同批 legacy 策略臂 p50 13.0s vs 10.0s，无下降；OpenCode 基线臂因缺配置缺失。按方案判定：未通过该上线门禁。"
+    },
+    "quality": {
+      "meanOverallFast": 1.723,
+      "meanOverallLegacyPolicy": 1.736,
+      "meanScoreDrop": 0.013,
+      "threshold": 0.2,
+      "pass": true,
+      "pairwiseSuccessRateDrop": 0.0,
+      "severeMisleading": 0
+    }
+  }
+}

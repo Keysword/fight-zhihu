@@ -30,3 +30,12 @@ systemctl restart background-board
 curl --fail http://127.0.0.1:3210/background-board/api/health
 curl --fail https://projects.wangjian7410.cc/background-board/api/health
 ```
+
+## SDK 直连传输与 fast 策略（本轮未灰度，仅预留开关）
+
+模型传输由 `AGENT_TRANSPORT` 控制：`legacy`（默认，保持原 `AGENT_API_URL` → OpenCode → 知乎直答顺序）或 `sdk`（OpenAI Node SDK 直连 `AGENT_SDK_BASE_URL`，需要同时显式配置 `AGENT_API_KEY`、`AGENT_MODEL`；缺失时启动报明确配置错误，不会回落旧路由或知乎直答）。`AGENT_SDK_STREAM=1` 启用流式传输（服务端聚合后才做协议校验）。指导预算策略由 `GUIDANCE_POLICY` 控制：`legacy`（默认，240s 整轮 / 90s 单次 / 2 次重试）或 `fast`（60s 整轮 / 40s 单次 / 1 次重试 / 1 次搜索 / 3 步）。
+
+本轮（2026-09-13 评测）**未部署、未切换任何线上配置**。未来灰度的推荐路径：先在一个独立实例上设置 `AGENT_TRANSPORT=sdk` 与所需 `GUIDANCE_POLICY`，确认质量门禁后再切换线上；切换时保留原有 `AGENT_API_URL`/OpenCode 凭证，不得删除旧链路。
+
+回退（如已获授权灰度后需要回退）：把 `/etc/background-board.env` 中 `AGENT_TRANSPORT` 改回 `legacy`、`GUIDANCE_POLICY` 改回 `legacy`，并一并恢复原有 `GUIDANCE_RUN_BUDGET_MS`、`GUIDANCE_MODEL_TIMEOUT_MS`、`GUIDANCE_MODEL_MAX_RETRIES` 的显式覆盖值（仅改 policy 不会清除 fast 的显式环境覆盖），然后按原发布流程重启实例。无需数据库 schema 回滚。
+

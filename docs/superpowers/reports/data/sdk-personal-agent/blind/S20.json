@@ -1,0 +1,54 @@
+{
+ "understanding": {
+  "summary": "目前只收到“先帮你申请”的回复，申请不等于已安排入住，实际住宿安排仍不确定。",
+  "openPoint": "是否已有房间号、入住时间或领取钥匙等明确安排尚不清楚。",
+  "sources": [
+   {
+    "kind": "evidence",
+    "id": "031b84f8-866b-46b0-bace-2b4aecab79ff"
+   }
+  ]
+ },
+ "communicationChecks": [
+  {
+   "observation": "材料中只有“先帮你申请”和“明天到了有人接你”的回复。",
+   "possibleMisreading": "这可能被理解成住宿已经安排完成、到达即可入住。",
+   "whyItMatters": "若实际未落实，用户明天可能出现无房可住的情况，需要提前准备替代方案。",
+   "howToCheck": "查看是否有房间号、入住日期或领钥匙时间的明确通知。",
+   "sources": [
+    {
+     "kind": "evidence",
+     "id": "031b84f8-866b-46b0-bace-2b4aecab79ff"
+    }
+   ]
+  }
+ ],
+ "nextStep": {
+  "kind": "contact",
+  "instruction": "请已有对接人提供宿舍安排的确认入口。",
+  "why": "先确认能否按时入住，避免核对到错误对象而延误。",
+  "contact": {
+   "label": "部门对接人",
+   "basis": "case_material",
+   "sources": [
+    {
+     "kind": "evidence",
+     "id": "031b84f8-866b-46b0-bace-2b4aecab79ff"
+    }
+   ]
+  },
+  "message": "我想确认一下明天到达后的住宿安排：目前是否已经有房间号和入住时间？如果不是您负责，能否告知那位会接我的人或负责分配的人，他们那边是否已有安排？",
+  "branches": [
+   {
+    "when": "收到明确房间和入住时间",
+    "then": "核对到达时间是否赶得上。"
+   },
+   {
+    "when": "仍只是口头承诺",
+    "then": "继续追踪确认，并准备临时住宿备选。"
+   }
+  ]
+ },
+ "question": null,
+ "changeSummary": "根据用户材料，下一步聚焦确认是否有明确住宿安排，而不是依赖“申请”这一口头承诺。"
+}

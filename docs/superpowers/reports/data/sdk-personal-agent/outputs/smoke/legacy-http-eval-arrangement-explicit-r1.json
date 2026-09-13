@@ -1,0 +1,36 @@
+{
+  "understanding": {
+    "summary": "房间号、领取地点和时间已明确。预计明天 17:20 到达，在 09:00—18:00 的领取窗口内。",
+    "openPoint": null,
+    "sources": [
+      {
+        "kind": "evidence",
+        "id": "3ee6896d-9186-4b60-a8db-b9ade6c62e16"
+      },
+      {
+        "kind": "input",
+        "id": "1750e8d8-c562-4350-b046-5cb0c6a643ba"
+      }
+    ]
+  },
+  "communicationChecks": [],
+  "nextStep": {
+    "kind": "inspect",
+    "instruction": "核对预计到达时间 17:20 是否在领取窗口 09:00—18:00 之内。",
+    "why": "若能赶上，则只需按时前往前台持身份证领钥匙即可；若赶不上，则需提前协调。",
+    "contact": null,
+    "message": null,
+    "branches": [
+      {
+        "when": "17:20 在窗口内",
+        "then": "直接按时前往 3 号楼前台，持身份证领取钥匙。"
+      },
+      {
+        "when": "接近或超过 18:00",
+        "then": "提前联系住宿中心确认延迟领取安排。"
+      }
+    ]
+  },
+  "question": null,
+  "changeSummary": null
+}

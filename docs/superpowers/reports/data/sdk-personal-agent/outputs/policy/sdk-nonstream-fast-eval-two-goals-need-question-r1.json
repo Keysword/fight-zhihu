@@ -1,0 +1,45 @@
+{
+  "understanding": {
+    "summary": "报销和住宿调整是两个独立事项，分别有明确的负责渠道：报销进度在财务系统内查询，住宿调整联系行政值班窗口。",
+    "openPoint": "两个问题分别由不同渠道处理，没有统一的优先顺序标准。",
+    "sources": [
+      {
+        "kind": "evidence",
+        "id": "2ad23bce-5829-4e21-a804-8520f1f00b3d"
+      },
+      {
+        "kind": "evidence",
+        "id": "c8e91cb4-ce42-4880-87e1-86957362f1d2"
+      }
+    ]
+  },
+  "communicationChecks": [],
+  "nextStep": {
+    "kind": "contact",
+    "instruction": "分头处理：报销进度在财务系统内查询，住宿调整通过行政值班窗口办理。",
+    "why": "两个通知指向不同渠道，混在一起问可能被退回或延误。",
+    "contact": {
+      "label": "财务系统（报销）和行政值班窗口（住宿调整）",
+      "basis": "case_material",
+      "sources": [
+        {
+          "kind": "evidence",
+          "id": "2ad23bce-5829-4e21-a804-8520f1f00b3d"
+        }
+      ]
+    },
+    "message": "报销：请在财务系统中查询进度。\\n住宿：请联系行政值班窗口咨询调整事宜。",
+    "branches": [
+      {
+        "when": "财务系统无法查到进度",
+        "then": "向财务人员确认具体查询路径。"
+      },
+      {
+        "when": "行政值班窗口未回复住宿调整",
+        "then": "按截止时间准备临时住宿方案。"
+      }
+    ]
+  },
+  "question": null,
+  "changeSummary": null
+}

@@ -19,11 +19,12 @@ BACKGROUND_BOARD_GUIDANCE_V2=1 pnpm dev
 - `BACKGROUND_BOARD_GUIDANCE_V2=1`：启用整套引导模式；关闭或移除后使用旧背景板页面和运行路径。
 - `BACKGROUND_BOARD_DATA_DIR`：SQLite 数据目录，留空时使用 `app/data`。
 - `AGENT_API_URL`、`AGENT_API_KEY`、`AGENT_MODEL`：OpenAI Chat Completions 兼容模型。
+- `AGENT_TRANSPORT=sdk` + `AGENT_SDK_BASE_URL` + `AGENT_API_KEY` + `AGENT_MODEL`：用 OpenAI Node SDK 直连的显式开关（默认 `legacy` 完全保留旧选择顺序；`AGENT_SDK_BASE_URL` 是 base URL，不带 `/chat/completions` 后缀；`AGENT_SDK_STREAM=1` 启用流式）。SDK 配置缺失会报明确配置错误，不会回落旧路由或知乎直答。
 - `OPENCODE_SERVER_URL`、`OPENCODE_SERVER_USERNAME`、`OPENCODE_SERVER_PASSWORD`：OpenCode Server 模型。
 - `ZHIHU_ACCESS_SECRET`：知乎开放平台搜索；没有其他模型配置时也可用于知乎直答。
 - `APP_VERSION`：健康检查显示的版本。
 
-模型选择顺序是 `AGENT_*`、OpenCode Server、知乎直答。密钥只放在本地或部署环境，不提交到仓库。
+模型选择顺序（legacy 传输）是 `AGENT_*`、OpenCode Server、知乎直答；`AGENT_TRANSPORT=sdk` 时只使用显式 SDK 配置。指导预算策略由 `GUIDANCE_POLICY`（`legacy` 默认 240s/90s/2 次重试；`fast` 60s/40s/1 次重试/1 次搜索/3 步）控制。密钥只放在本地或部署环境，不提交到仓库。
 
 ## 引导模式的数据边界
 

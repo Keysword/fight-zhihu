@@ -1,0 +1,28 @@
+{
+ "understanding": {
+  "summary": "房间为3号楼412，明天09:00—18:00持身份证到3号楼前台领钥匙。预计17:20到达，在领钥匙窗口之内，可直接按此安排入住。",
+  "openPoint": null,
+  "sources": [
+   {
+    "kind": "evidence",
+    "id": "b48b5cde-1aa3-4a63-9dbc-85419505b160"
+   }
+  ]
+ },
+ "communicationChecks": [],
+ "nextStep": {
+  "kind": "inspect",
+  "instruction": "明天17:20到达后，直接持身份证到3号楼前台领取钥匙。",
+  "why": "到达时间在领取窗口内（17:20早于18:00），无需调整行程或联系他人。",
+  "contact": null,
+  "message": null,
+  "branches": [
+   {
+    "when": "到达时前台无人在岗",
+    "then": "询问住宿中心是否有其他领取方式。"
+   }
+  ]
+ },
+ "question": null,
+ "changeSummary": null
+}

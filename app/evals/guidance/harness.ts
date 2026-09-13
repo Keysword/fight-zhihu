@@ -12,8 +12,6 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { VERSION as SDK_VERSION } from 'openai';
-
 import type { GuidanceSnapshot } from '$lib/domain/guidance';
 import { createCaseRepository, type CaseRepository } from '$lib/server/cases/repository';
 import { createModelClient, type ModelClient } from '$lib/server/agent/model-client';
@@ -101,6 +99,18 @@ function loadEvalEnvFile(): void {
 		if (!match) continue;
 		const [, name, value] = match;
 		if (!(name in process.env)) process.env[name] = value;
+	}
+}
+
+/** openai v7 不再导出 VERSION 常量；从包元数据读取已锁定的版本。 */
+function readSdkVersion(): string {
+	try {
+		const packageJson = JSON.parse(
+			readFileSync(resolve(process.cwd(), 'node_modules/openai/package.json'), 'utf8')
+		) as { version?: string };
+		return packageJson.version ?? 'unknown';
+	} catch {
+		return 'unknown';
 	}
 }
 
@@ -265,7 +275,7 @@ export class EvalSession {
 		loadEvalEnvFile();
 		this.phase = options.phase;
 		this.commit = currentCommit();
-		this.sdkVersion = SDK_VERSION;
+		this.sdkVersion = readSdkVersion();
 		this.dataDir = dataDirectory;
 		this.globalModelLimit = positiveInt(process.env.GUIDANCE_EVAL_MODEL_LIMIT, 150);
 		this.globalSearchLimit = positiveInt(process.env.GUIDANCE_EVAL_SEARCH_LIMIT, 30);

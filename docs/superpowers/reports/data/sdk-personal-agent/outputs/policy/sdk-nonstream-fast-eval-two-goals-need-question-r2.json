@@ -1,0 +1,45 @@
+{
+  "understanding": {
+    "summary": "两个问题分属不同渠道：报销进度通过财务系统查询，住宿调整联系行政值班窗口。",
+    "openPoint": "不清楚财务系统内是否已有提交记录，以及行政值班窗口的具体联系方式。",
+    "sources": [
+      {
+        "kind": "evidence",
+        "id": "ed44e21d-c02f-4b5c-a975-97f3059f1606"
+      },
+      {
+        "kind": "evidence",
+        "id": "a4d9155a-1698-4cea-baf4-9f3256f592d4"
+      }
+    ]
+  },
+  "communicationChecks": [],
+  "nextStep": {
+    "kind": "contact",
+    "instruction": "先提交报销材料到财务系统，然后向行政值班窗口咨询住宿调整。",
+    "why": "材料明确了两个问题各走各的渠道，分开处理能避免互相等待。",
+    "contact": {
+      "label": "财务系统",
+      "basis": "case_material",
+      "sources": [
+        {
+          "kind": "evidence",
+          "id": "ed44e21d-c02f-4b5c-a975-97f3059f1606"
+        }
+      ]
+    },
+    "message": null,
+    "branches": [
+      {
+        "when": "财务系统显示报销已提交",
+        "then": "关注进度，无需额外联系财务。"
+      },
+      {
+        "when": "行政值班窗口已回复住宿调整",
+        "then": "按对方告知的时间表安排。"
+      }
+    ]
+  },
+  "question": "请问您是否已在财务系统提交过报销？如果已提交，系统里能直接看到当前进度。",
+  "changeSummary": null
+}

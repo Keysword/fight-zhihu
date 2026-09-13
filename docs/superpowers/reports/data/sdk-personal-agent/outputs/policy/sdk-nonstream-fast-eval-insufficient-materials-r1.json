@@ -1,0 +1,54 @@
+{
+  "understanding": {
+    "summary": "目前只知道对方答应代为申请，且提到明天有人接，但宿舍是否已安排、具体房间和时间都未确认。",
+    "openPoint": "申请是否已转成可入住的确定安排尚不清楚。",
+    "sources": [
+      {
+        "kind": "evidence",
+        "id": "9fcb8258-07d7-4cd2-bbb1-45ad73697650"
+      }
+    ]
+  },
+  "communicationChecks": [
+    {
+      "observation": "材料中出现了‘我先帮你申请’的回复。",
+      "possibleMisreading": "这可能被理解成住宿已经落实。",
+      "whyItMatters": "会影响用户明天到达后是否需要准备临时安排。",
+      "howToCheck": "查看是否有房间号、入住时间或领钥匙等后续明确答复。",
+      "sources": [
+        {
+          "kind": "evidence",
+          "id": "9fcb8258-07d7-4cd2-bbb1-45ad73697650"
+        }
+      ]
+    }
+  ],
+  "nextStep": {
+    "kind": "contact",
+    "instruction": "回复部门对接人，请对方在明天到达前给出住宿的明确确认。",
+    "why": "对方已表示‘明天有人接’，是最可能掌握实时安排的入口；直接问清结果，避免重复找其他部门。",
+    "contact": {
+      "label": "部门对接人",
+      "basis": "case_material",
+      "sources": [
+        {
+          "kind": "evidence",
+          "id": "9fcb8258-07d7-4cd2-bbb1-45ad73697650"
+        }
+      ]
+    },
+    "message": "想问一下，住宿目前是否已经确认好了？明天到达后具体在哪个房间、怎么领钥匙？如果还没落实，能否在出发前告诉我结果？",
+    "branches": [
+      {
+        "when": "收到明确房间和时间",
+        "then": "核对到达时间与接应安排是否匹配。"
+      },
+      {
+        "when": "仍只有模糊承诺",
+        "then": "按截止时间准备临时住宿备选。"
+      }
+    ]
+  },
+  "question": null,
+  "changeSummary": null
+}
