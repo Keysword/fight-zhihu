@@ -136,6 +136,21 @@ export function openDatabase(path: string): DatabaseSync {
 				SELECT RAISE(ABORT, 'input guidance must belong to case');
 			END;
 		`);
+
+		const guidanceColumns = database
+			.prepare('PRAGMA table_info(guidance_snapshots)')
+			.all() as unknown as Array<{ name: string }>;
+		if (!guidanceColumns.some((column) => column.name === 'completeness')) {
+			database.exec(
+				"ALTER TABLE guidance_snapshots ADD COLUMN completeness TEXT NOT NULL DEFAULT 'full'"
+			);
+		}
+		if (!guidanceColumns.some((column) => column.name === 'dropped_json')) {
+			database.exec(
+				"ALTER TABLE guidance_snapshots ADD COLUMN dropped_json TEXT NOT NULL DEFAULT '[]'"
+			);
+		}
+
 		database.exec('COMMIT');
 	} catch (error) {
 		database.exec('ROLLBACK');

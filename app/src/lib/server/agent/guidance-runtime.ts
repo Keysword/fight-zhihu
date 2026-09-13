@@ -1,24 +1,46 @@
 import { randomUUID } from 'node:crypto';
 
-import type { GuidanceDraft, GuidanceSnapshot, SourceRef } from '$lib/domain/guidance';
+import type {
+	DroppedGuidanceField,
+	GuidanceCompleteness,
+	GuidanceDraft,
+	GuidanceSnapshot,
+	SourceRef
+} from '$lib/domain/guidance';
 import type { ExternalClue } from '$lib/domain/types';
 import { redactSearchQuery } from '$lib/privacy/redact';
 import type { CaseRepository } from '$lib/server/cases/repository';
 import type { ZhihuClient } from '$lib/server/zhihu/client';
 import { buildGuidanceMessages, type GuidancePromptPriorGuidance } from './guidance-prompt';
-import { parseGuidanceAction } from './guidance-protocol';
-import type { ModelClient, ModelMessage } from './model-client';
+import {
+	parseGuidanceActionEnvelope,
+	type GuidanceActionEnvelope
+} from './guidance-protocol';
+import { salvageGuidance } from './guidance-salvage';
+import {
+	DEFAULT_MODEL_TIMEOUT_MS,
+	ModelClientError,
+	type ModelClient,
+	type ModelFailureReason,
+	type ModelMessage
+} from './model-client';
 
 const MAX_MODEL_CALLS = 5;
 const MAX_SEARCHES = 2;
 const DEFAULT_MAX_CONTEXT_CHARACTERS = 120_000;
+export const DEFAULT_RUN_BUDGET_MS = 120_000;
+export const DEFAULT_MAX_MODEL_RETRIES = 2;
+const RETRY_BACKOFF_MS = [500, 1_500];
+const RETRY_JITTER_RATIO = 0.2;
 
 export interface GuidanceModelCallRecord {
 	index: number;
+	attempt: number;
 	durationMs: number;
 	actionType: string | null;
 	parsed: boolean;
 	ok: boolean;
+	retryReason: ModelFailureReason | null;
 }
 
 export interface GuidanceSearchRecord {
@@ -46,6 +68,11 @@ export interface GuidanceRuntimeDependencies {
 	zhihu: ZhihuClient;
 	now?: () => number;
 	maxContextCharacters?: number;
+	modelTimeoutMs?: number;
+	runBudgetMs?: number;
+	maxModelRetries?: number;
+	sleep?: (durationMs: number) => Promise<void>;
+	random?: () => number;
 }
 
 function messageCharacters(messages: readonly ModelMessage[]): number {
@@ -128,6 +155,19 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 	const { repository, model, zhihu } = dependencies;
 	const now = dependencies.now ?? (() => performance.now());
 	const maxContextCharacters = dependencies.maxContextCharacters ?? DEFAULT_MAX_CONTEXT_CHARACTERS;
+	const modelTimeoutMs = dependencies.modelTimeoutMs ?? DEFAULT_MODEL_TIMEOUT_MS;
+	const runBudgetMs = dependencies.runBudgetMs ?? DEFAULT_RUN_BUDGET_MS;
+	const maxModelRetries = dependencies.maxModelRetries ?? DEFAULT_MAX_MODEL_RETRIES;
+	const sleep =
+		dependencies.sleep ??
+		((durationMs: number) => new Promise<void>((resolve) => setTimeout(resolve, durationMs)));
+	const random = dependencies.random ?? Math.random;
+
+	function backoffDelayMs(attempt: number): number {
+		const base = RETRY_BACKOFF_MS[Math.min(attempt - 1, RETRY_BACKOFF_MS.length - 1)];
+		return Math.round(base * (1 + (random() * 2 - 1) * RETRY_JITTER_RATIO));
+	}
+
 	interface CaseFlightState {
 		activeRevision: number;
 		activePromise: Promise<GuidanceRunResult>;
@@ -140,8 +180,13 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 		const startedAt = now();
 		const modelCalls: GuidanceModelCallRecord[] = [];
 		const searches: GuidanceSearchRecord[] = [];
+		// One reasoning step can span several transport attempts; the budget counts steps.
+		const stepCount = () => new Set(modelCalls.map((record) => record.index)).size;
 		let searchCount = 0;
-		let repairCount = 0;
+		// Schema and reference repairs get separate budgets: "malformed once, then a bad
+		// reference" is a common pair and must not be fatal on the first combination.
+		const repairs = { schema: 0, reference: 0 };
+		const repairTotal = () => repairs.schema + repairs.reference;
 		let result: GuidanceRunResult | undefined;
 
 		const caseRecord = repository.getCase(caseId);
@@ -157,16 +202,50 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 					contextRevision,
 					outcome: completed.outcome,
 					totalMs: Math.round(now() - startedAt),
-					modelCallCount: modelCalls.length,
+					modelCallCount: stepCount(),
 					modelCalls,
 					searchCount,
 					searches,
-					repairCount,
+					repairCount: repairTotal(),
+					repairs: { ...repairs },
+					completeness: completed.guidance?.completeness ?? null,
+					droppedCount: completed.guidance?.dropped.length ?? 0,
 					snapshotId: completed.guidance?.id ?? null,
 					failureCode: completed.error?.code ?? null
 				}
 			});
 			return completed;
+		}
+
+		const gatheredClues = new Map<string, ExternalClue>();
+
+		function saveAndSummarise(
+			draft: GuidanceDraft,
+			degradation: { completeness: GuidanceCompleteness; dropped: DroppedGuidanceField[] }
+		): GuidanceRunResult {
+			const saved = repository.saveGuidance(
+				caseId,
+				contextRevision,
+				draft,
+				[...gatheredClues.values()],
+				runId,
+				degradation
+			);
+			const outcome =
+				saved.status === 'superseded'
+					? ('superseded' as const)
+					: draft.question
+						? ('needs_input' as const)
+						: ('ready' as const);
+			return {
+				runId,
+				outcome,
+				guidance: saved.snapshot,
+				contextRevision,
+				modelCallCount: stepCount(),
+				searchCount,
+				repairCount: repairTotal()
+			};
 		}
 
 		try {
@@ -183,7 +262,6 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 				.map((guidanceId) => repository.getGuidance(caseId, guidanceId))
 				.filter((snapshot): snapshot is GuidanceSnapshot => snapshot !== null)
 				.map(priorGuidance);
-			const gatheredClues = new Map<string, ExternalClue>();
 			const evidenceIds = new Set(caseRecord.evidence.map((evidence) => evidence.id));
 			const inputIds = new Set(inputs.map((input) => input.id));
 			const sourceLabels = caseRecord.evidence.map((evidence) => evidence.sourceLabel);
@@ -207,9 +285,9 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 					failure(
 						runId,
 						contextRevision,
-						modelCalls.length,
+						stepCount(),
 						searchCount,
-						repairCount,
+						repairTotal(),
 						'INPUT_TOO_LONG',
 						'案例上下文超过本轮可处理长度，请减少单次材料后重试'
 					)
@@ -220,9 +298,9 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 					failure(
 						runId,
 						contextRevision,
-						modelCalls.length,
+						stepCount(),
 						searchCount,
-						repairCount,
+						repairTotal(),
 						'MODEL_NOT_CONFIGURED',
 						'尚未配置可用的指导模型'
 					)
@@ -235,74 +313,152 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 						failure(
 							runId,
 							contextRevision,
-							modelCalls.length,
+							stepCount(),
 							searchCount,
-							repairCount,
+							repairTotal(),
 							'INPUT_TOO_LONG',
 							'本轮模型上下文超过可处理长度'
 						)
 					);
 				}
 
-				const callStartedAt = now();
-				let rawAction: string;
-				try {
-					rawAction = await model.complete(messages);
-				} catch {
-					modelCalls.push({
-						index: callIndex,
-						durationMs: Math.round(now() - callStartedAt),
-						actionType: null,
-						parsed: false,
-						ok: false
-					});
+				if (now() - startedAt >= runBudgetMs) {
 					return finish(
 						failure(
 							runId,
 							contextRevision,
-							modelCalls.length,
+							stepCount(),
 							searchCount,
-							repairCount,
-							'MODEL_CALL_FAILED',
+							repairTotal(),
+							'TIME_BUDGET_EXCEEDED',
+							'本轮整理超过可用时间，请稍后重试'
+						)
+					);
+				}
+
+				let rawAction: string | undefined;
+				let lastReason: ModelFailureReason | null = null;
+				// Retries cover transport flakiness only, so they deliberately do not consume
+				// MAX_MODEL_CALLS, which budgets reasoning steps.
+				for (let attempt = 1; attempt <= maxModelRetries + 1; attempt += 1) {
+					const attemptStartedAt = now();
+					const remainingMs = runBudgetMs - (attemptStartedAt - startedAt);
+					if (remainingMs <= 0) break;
+					try {
+						rawAction = await model.complete(messages, {
+							timeoutMs: Math.min(modelTimeoutMs, remainingMs)
+						});
+						modelCalls.push({
+							index: callIndex,
+							attempt,
+							durationMs: Math.round(now() - attemptStartedAt),
+							actionType: null,
+							parsed: false,
+							ok: true,
+							retryReason: null
+						});
+						break;
+					} catch (error) {
+						// Only failures the client itself classified are retried; an unclassified
+						// error stays terminal rather than being guessed at here.
+						const classified = error instanceof ModelClientError ? error : null;
+						const reason: ModelFailureReason = classified?.reason ?? 'payload';
+						const retryable = classified?.retryable ?? false;
+						lastReason = reason;
+						modelCalls.push({
+							index: callIndex,
+							attempt,
+							durationMs: Math.round(now() - attemptStartedAt),
+							actionType: null,
+							parsed: false,
+							ok: false,
+							retryReason: reason
+						});
+						if (!retryable || attempt > maxModelRetries) break;
+						const delayMs = backoffDelayMs(attempt);
+						if (now() - startedAt + delayMs >= runBudgetMs) break;
+						await sleep(delayMs);
+					}
+				}
+
+				if (rawAction === undefined) {
+					return finish(
+						failure(
+							runId,
+							contextRevision,
+							stepCount(),
+							searchCount,
+							repairTotal(),
+							lastReason === 'timeout' && now() - startedAt >= runBudgetMs
+								? 'TIME_BUDGET_EXCEEDED'
+								: 'MODEL_CALL_FAILED',
 							'指导模型暂时无法完成本轮请求'
 						)
 					);
 				}
 
-				const callRecord: GuidanceModelCallRecord = {
-					index: callIndex,
-					durationMs: Math.round(now() - callStartedAt),
-					actionType: null,
-					parsed: false,
-					ok: true
-				};
-				modelCalls.push(callRecord);
-				let action: ReturnType<typeof parseGuidanceAction>;
+				const callRecord = modelCalls.at(-1) as GuidanceModelCallRecord;
+				let envelope: GuidanceActionEnvelope;
 				try {
-					action = parseGuidanceAction(rawAction);
-					callRecord.actionType = action.type;
-					callRecord.parsed = true;
+					envelope = parseGuidanceActionEnvelope(rawAction);
 				} catch (error) {
 					const reason = error instanceof Error ? error.message : '指导动作不符合协议';
-					if (repairCount === 1) {
+					if (repairs.schema >= 1) {
 						return finish(
 							failure(
 								runId,
 								contextRevision,
-								modelCalls.length,
+								stepCount(),
 								searchCount,
-								repairCount,
+								repairTotal(),
 								'GUIDANCE_INVALID',
 								'模型连续提交了无效的指导动作'
 							)
 						);
 					}
-					repairCount = 1;
+					repairs.schema += 1;
 					messages.push(
 						repairMessage(reason, evidenceIds, inputIds, new Set(gatheredClues.keys()))
 					);
 					continue;
 				}
+
+				if (envelope.kind === 'salvageable') {
+					callRecord.actionType = 'provide_guidance';
+					messages.push({ role: 'assistant', content: rawAction });
+					// One strict-schema repair is still offered before falling back to salvage, so a
+					// model that can simply restate a compliant reply is given that chance first.
+					if (repairs.schema < 1) {
+						repairs.schema += 1;
+						messages.push(
+							repairMessage(envelope.reason, evidenceIds, inputIds, new Set(gatheredClues.keys()))
+						);
+						continue;
+					}
+					const salvaged = salvageGuidance(envelope.raw, {
+						evidence: evidenceIds,
+						input: inputIds,
+						external: new Set(gatheredClues.keys())
+					});
+					if (!salvaged.draft) {
+						return finish(
+							failure(
+								runId,
+								contextRevision,
+								stepCount(),
+								searchCount,
+								repairTotal(),
+								'GUIDANCE_INVALID',
+								'模型连续提交了无效的指导动作'
+							)
+						);
+					}
+					return finish(saveAndSummarise(salvaged.draft, salvaged));
+				}
+
+				const action = envelope.action;
+				callRecord.actionType = action.type;
+				callRecord.parsed = true;
 
 				messages.push({ role: 'assistant', content: rawAction });
 
@@ -374,57 +530,48 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 					const reason = `以下来源引用无效、类型不匹配或不属于本案例/本轮搜索：${invalid
 						.map((source) => `${source.kind}:${source.id}`)
 						.join('，')}`;
-					if (repairCount === 1) {
+					// One reference repair is offered on its own budget; after that the illegal ids are
+					// stripped rather than used to discard an otherwise usable reply.
+					if (repairs.reference < 1) {
+						repairs.reference += 1;
+						messages.push(
+							repairMessage(reason, evidenceIds, inputIds, new Set(gatheredClues.keys()))
+						);
+						continue;
+					}
+					const salvaged = salvageGuidance(action.guidance, {
+						evidence: evidenceIds,
+						input: inputIds,
+						external: new Set(gatheredClues.keys())
+					});
+					if (!salvaged.draft) {
 						return finish(
 							failure(
 								runId,
 								contextRevision,
-								modelCalls.length,
+								stepCount(),
 								searchCount,
-								repairCount,
+								repairTotal(),
 								'GUIDANCE_INVALID',
 								'模型连续提交了引用无效的指导'
 							)
 						);
 					}
-					repairCount = 1;
-					messages.push(
-						repairMessage(reason, evidenceIds, inputIds, new Set(gatheredClues.keys()))
-					);
-					continue;
+					return finish(saveAndSummarise(salvaged.draft, salvaged));
 				}
 
-				const saved = repository.saveGuidance(
-					caseId,
-					contextRevision,
-					action.guidance,
-					[...gatheredClues.values()],
-					runId
+				return finish(
+					saveAndSummarise(action.guidance, { completeness: 'full', dropped: [] })
 				);
-				const outcome =
-					saved.status === 'superseded'
-						? ('superseded' as const)
-						: action.guidance.question
-							? ('needs_input' as const)
-							: ('ready' as const);
-				return finish({
-					runId,
-					outcome,
-					guidance: saved.snapshot,
-					contextRevision,
-					modelCallCount: modelCalls.length,
-					searchCount,
-					repairCount
-				});
 			}
 
 			return finish(
 				failure(
 					runId,
 					contextRevision,
-					modelCalls.length,
+					stepCount(),
 					searchCount,
-					repairCount,
+					repairTotal(),
 					'MODEL_CALL_LIMIT_REACHED',
 					'模型在五次调用内没有提交有效指导'
 				)
@@ -435,9 +582,9 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 				failure(
 					runId,
 					contextRevision,
-					modelCalls.length,
+					stepCount(),
 					searchCount,
-					repairCount,
+					repairTotal(),
 					'GUIDANCE_RUN_FAILED',
 					error instanceof Error ? error.message : '指导运行遇到未知错误'
 				)

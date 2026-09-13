@@ -27,6 +27,37 @@ const understandingSchema = z
 	})
 	.strict();
 
+/**
+ * The necessary layer: what has to survive for a run to be worth showing at all.
+ * Everything else is optional and may be dropped one block at a time.
+ */
+export const understandingCoreSchema = z
+	.object({
+		summary: textSchema,
+		openPoint: textSchema.nullable().default(null),
+		sources: z.array(sourceRefSchema).max(12).default([])
+	})
+	.strip();
+
+export const guidanceCompletenessSchema = z.enum(['full', 'partial', 'minimal']);
+
+export const droppedGuidanceFieldSchema = z
+	.object({
+		field: z.enum([
+			'understanding.summary',
+			'understanding.openPoint',
+			'understanding.sources',
+			'communicationChecks',
+			'nextStep',
+			'question',
+			'changeSummary',
+			'unknownFields'
+		]),
+		reason: z.enum(['schema', 'reference']),
+		detail: z.string().min(1).max(600)
+	})
+	.strict();
+
 const communicationCheckSchema = z
 	.object({
 		observation: textSchema,
@@ -113,9 +144,19 @@ export const guidanceDraftSchema = z
 		}
 	});
 
+export {
+	communicationCheckSchema,
+	contactSchema,
+	nextStepSchema,
+	understandingSchema,
+	textSchema
+};
+
 export type SourceRef = z.infer<typeof sourceRefSchema>;
 export type CaseInputRequest = z.infer<typeof caseInputSchema>;
 export type GuidanceDraft = z.infer<typeof guidanceDraftSchema>;
+export type GuidanceCompleteness = z.infer<typeof guidanceCompletenessSchema>;
+export type DroppedGuidanceField = z.infer<typeof droppedGuidanceFieldSchema>;
 
 export interface CaseInput extends CaseInputRequest {
 	id: string;
@@ -132,4 +173,6 @@ export interface GuidanceSnapshot {
 	createdAt: string;
 	draft: GuidanceDraft;
 	externalClues: ExternalClue[];
+	completeness: GuidanceCompleteness;
+	dropped: DroppedGuidanceField[];
 }

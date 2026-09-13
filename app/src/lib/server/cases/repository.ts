@@ -2,8 +2,20 @@ import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import { z } from 'zod';
 
-import { caseInputSchema, guidanceDraftSchema } from '$lib/domain/guidance';
-import type { CaseInput, GuidanceDraft, GuidanceSnapshot, SourceRef } from '$lib/domain/guidance';
+import {
+	caseInputSchema,
+	droppedGuidanceFieldSchema,
+	guidanceCompletenessSchema,
+	guidanceDraftSchema
+} from '$lib/domain/guidance';
+import type {
+	CaseInput,
+	DroppedGuidanceField,
+	GuidanceCompleteness,
+	GuidanceDraft,
+	GuidanceSnapshot,
+	SourceRef
+} from '$lib/domain/guidance';
 import { backgroundBoardSchema, evidenceSchema, externalClueSchema } from '$lib/domain/schemas';
 import type {
 	AgentEvent,
@@ -78,7 +90,12 @@ interface GuidanceRow {
 	draft_json: string;
 	external_clues_json: string;
 	created_at: string;
+	completeness: string | null;
+	dropped_json: string | null;
 }
+
+const GUIDANCE_COLUMNS =
+	'id, case_id, run_id, context_revision, draft_json, external_clues_json, created_at, completeness, dropped_json';
 
 export class RevisionConflictError extends Error {
 	constructor() {
@@ -218,7 +235,13 @@ function guidanceFromRow(row: GuidanceRow): GuidanceSnapshot {
 		contextRevision: row.context_revision,
 		createdAt: row.created_at,
 		draft: guidanceDraftSchema.parse(JSON.parse(row.draft_json)),
-		externalClues: z.array(externalClueSchema).parse(JSON.parse(row.external_clues_json))
+		externalClues: z.array(externalClueSchema).parse(JSON.parse(row.external_clues_json)),
+		// Rows written before the degradation columns existed are complete by definition.
+		completeness: guidanceCompletenessSchema.catch('full').parse(row.completeness ?? 'full'),
+		dropped: z
+			.array(droppedGuidanceFieldSchema)
+			.catch([])
+			.parse(JSON.parse(row.dropped_json ?? '[]'))
 	};
 }
 
@@ -245,7 +268,8 @@ export interface CaseRepository {
 		expectedContextRevision: number,
 		draft: GuidanceDraft,
 		externalClues: ExternalClue[],
-		runId: string
+		runId: string,
+		degradation?: { completeness: GuidanceCompleteness; dropped: DroppedGuidanceField[] }
 	): {
 		status: 'current' | 'superseded';
 		snapshot: GuidanceSnapshot;
@@ -451,16 +475,25 @@ export function createCaseRepository(path: string): CaseRepository {
 			};
 		},
 
-		saveGuidance(caseId, expectedContextRevision, inputDraft, inputExternalClues, runId) {
+		saveGuidance(
+			caseId,
+			expectedContextRevision,
+			inputDraft,
+			inputExternalClues,
+			runId,
+			degradation
+		) {
 			database.exec('BEGIN IMMEDIATE');
 			try {
 				requireCase(caseId);
 				const draft = guidanceDraftSchema.parse(inputDraft);
 				const externalClues = z.array(externalClueSchema).parse(inputExternalClues);
+				const completeness = guidanceCompletenessSchema.parse(degradation?.completeness ?? 'full');
+				const dropped = z.array(droppedGuidanceFieldSchema).parse(degradation?.dropped ?? []);
 				validateGuidanceReferences(database, caseId, draft, externalClues);
 				const existingRow = database
 					.prepare(
-						'SELECT id, case_id, run_id, context_revision, draft_json, external_clues_json, created_at FROM guidance_snapshots WHERE run_id = ?'
+						`SELECT ${GUIDANCE_COLUMNS} FROM guidance_snapshots WHERE run_id = ?`
 					)
 					.get(runId) as GuidanceRow | undefined;
 				if (existingRow) {
@@ -489,7 +522,7 @@ export function createCaseRepository(path: string): CaseRepository {
 				const createdAt = new Date().toISOString();
 				database
 					.prepare(
-						'INSERT INTO guidance_snapshots (id, case_id, run_id, context_revision, draft_json, external_clues_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+						'INSERT INTO guidance_snapshots (id, case_id, run_id, context_revision, draft_json, external_clues_json, created_at, completeness, dropped_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
 					)
 					.run(
 						id,
@@ -498,7 +531,9 @@ export function createCaseRepository(path: string): CaseRepository {
 						expectedContextRevision,
 						JSON.stringify(draft),
 						JSON.stringify(externalClues),
-						createdAt
+						createdAt,
+						completeness,
+						JSON.stringify(dropped)
 					);
 				const currentResult = database
 					.prepare(
@@ -515,7 +550,9 @@ export function createCaseRepository(path: string): CaseRepository {
 					contextRevision: expectedContextRevision,
 					createdAt,
 					draft,
-					externalClues
+					externalClues,
+					completeness,
+					dropped
 				};
 				return {
 					status: isCurrent ? ('current' as const) : ('superseded' as const),
@@ -534,7 +571,7 @@ export function createCaseRepository(path: string): CaseRepository {
 			if (!caseRow.current_guidance_id) return null;
 			const row = database
 				.prepare(
-					'SELECT id, case_id, run_id, context_revision, draft_json, external_clues_json, created_at FROM guidance_snapshots WHERE case_id = ? AND id = ?'
+					`SELECT ${GUIDANCE_COLUMNS} FROM guidance_snapshots WHERE case_id = ? AND id = ?`
 				)
 				.get(caseId, caseRow.current_guidance_id) as GuidanceRow | undefined;
 			return row ? guidanceFromRow(row) : null;
@@ -544,7 +581,7 @@ export function createCaseRepository(path: string): CaseRepository {
 			requireCase(caseId);
 			const row = database
 				.prepare(
-					'SELECT id, case_id, run_id, context_revision, draft_json, external_clues_json, created_at FROM guidance_snapshots WHERE case_id = ? AND id = ?'
+					`SELECT ${GUIDANCE_COLUMNS} FROM guidance_snapshots WHERE case_id = ? AND id = ?`
 				)
 				.get(caseId, guidanceId) as GuidanceRow | undefined;
 			return row ? guidanceFromRow(row) : null;
@@ -555,12 +592,12 @@ export function createCaseRepository(path: string): CaseRepository {
 			const rows = (limit === undefined
 				? database
 						.prepare(
-							'SELECT id, case_id, run_id, context_revision, draft_json, external_clues_json, created_at FROM guidance_snapshots WHERE case_id = ? ORDER BY sequence'
+							`SELECT ${GUIDANCE_COLUMNS} FROM guidance_snapshots WHERE case_id = ? ORDER BY sequence`
 						)
 						.all(caseId)
 				: database
 						.prepare(
-							'SELECT id, case_id, run_id, context_revision, draft_json, external_clues_json, created_at FROM guidance_snapshots WHERE case_id = ? ORDER BY sequence DESC LIMIT ?'
+							`SELECT ${GUIDANCE_COLUMNS} FROM guidance_snapshots WHERE case_id = ? ORDER BY sequence DESC LIMIT ?`
 						)
 						.all(caseId, limit)) as unknown as GuidanceRow[];
 			if (limit !== undefined) rows.reverse();

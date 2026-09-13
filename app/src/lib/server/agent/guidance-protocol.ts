@@ -45,3 +45,34 @@ export function parseGuidanceAction(response: string): GuidanceAction {
 	}
 	return result.data;
 }
+
+export type GuidanceActionEnvelope =
+	| { kind: 'action'; action: GuidanceAction }
+	| { kind: 'salvageable'; raw: unknown; reason: string };
+
+/**
+ * Parses an action, but when the reply is a recognisable `provide_guidance` whose payload fails
+ * the strict contract, hands the raw guidance back so the salvage pass can still use it.
+ * Anything else — bad JSON, unknown action, missing guidance — remains a protocol error.
+ */
+export function parseGuidanceActionEnvelope(response: string): GuidanceActionEnvelope {
+	const payload = parseJsonObject(response);
+	const result = guidanceActionSchema.safeParse(payload);
+	if (result.success) return { kind: 'action', action: result.data };
+
+	const record = payload as Record<string, unknown>;
+	const guidance = record.guidance;
+	if (record.type === 'provide_guidance' && guidance !== undefined && guidance !== null) {
+		const detail = result.error.issues
+			.slice(0, 3)
+			.map((issue) => `${issue.path.join('.') || '(根)'}: ${issue.message}`)
+			.join('；');
+		return { kind: 'salvageable', raw: guidance, reason: `指导动作不符合协议：${detail}` };
+	}
+
+	const detail = result.error.issues
+		.slice(0, 3)
+		.map((issue) => `${issue.path.join('.') || '(根)'}: ${issue.message}`)
+		.join('；');
+	throw new AgentProtocolError(`指导动作不符合协议：${detail}`, result.error);
+}

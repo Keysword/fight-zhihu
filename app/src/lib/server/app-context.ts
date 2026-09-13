@@ -2,8 +2,16 @@ import { resolve } from 'node:path';
 import { env } from '$env/dynamic/private';
 
 import { createAgentRuntime } from '$lib/server/agent/runtime';
-import { createGuidanceRuntime } from '$lib/server/agent/guidance-runtime';
-import { createModelClient, resolveModelConfiguration } from '$lib/server/agent/model-client';
+import {
+	createGuidanceRuntime,
+	DEFAULT_MAX_MODEL_RETRIES,
+	DEFAULT_RUN_BUDGET_MS
+} from '$lib/server/agent/guidance-runtime';
+import {
+	createModelClient,
+	resolveModelConfiguration,
+	resolveModelTimeoutMs
+} from '$lib/server/agent/model-client';
 import { createCaseRepository } from '$lib/server/cases/repository';
 import { createCaseService, type CaseService } from '$lib/server/services/case-service';
 import { createZhihuClient, ZhihuApiError, type ZhihuClient } from '$lib/server/zhihu/client';
@@ -12,6 +20,16 @@ let service: CaseService | undefined;
 
 export function guidanceModeEnabled(value: string | undefined): boolean {
 	return value === '1';
+}
+
+export function positiveIntegerOr(value: string | undefined, fallback: number): number {
+	const parsed = Number(value);
+	return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
+
+export function nonNegativeIntegerOr(value: string | undefined, fallback: number): number {
+	const parsed = Number(value);
+	return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : fallback;
 }
 
 function unavailableZhihuClient(): ZhihuClient {
@@ -30,12 +48,25 @@ export function getCaseService(): CaseService {
 	const dataDirectory = env.BACKGROUND_BOARD_DATA_DIR || resolve(process.cwd(), 'data');
 	const repository = createCaseRepository(resolve(dataDirectory, 'background-board.sqlite'));
 	const modelConfiguration = resolveModelConfiguration(env);
-	const model = modelConfiguration ? createModelClient(modelConfiguration) : null;
+	const modelTimeoutMs = resolveModelTimeoutMs(env);
+	const model = modelConfiguration
+		? createModelClient(modelConfiguration, { timeoutMs: modelTimeoutMs })
+		: null;
 	const zhihu = env.ZHIHU_ACCESS_SECRET
 		? createZhihuClient({ accessSecret: env.ZHIHU_ACCESS_SECRET })
 		: unavailableZhihuClient();
 	const runner = createAgentRuntime({ repository, model, zhihu });
-	const guidanceRunner = createGuidanceRuntime({ repository, model, zhihu });
+	const guidanceRunner = createGuidanceRuntime({
+		repository,
+		model,
+		zhihu,
+		modelTimeoutMs,
+		runBudgetMs: positiveIntegerOr(env.GUIDANCE_RUN_BUDGET_MS, DEFAULT_RUN_BUDGET_MS),
+		maxModelRetries: nonNegativeIntegerOr(
+			env.GUIDANCE_MODEL_MAX_RETRIES,
+			DEFAULT_MAX_MODEL_RETRIES
+		)
+	});
 	service = createCaseService({
 		repository,
 		runner,

@@ -49,6 +49,17 @@ SvelteKit API（校验、脱敏、限流、模式切换）
         └── 旧 Background Board Agent（兼容模式）
 ```
 
+## 韧性改进（2026-09-13）
+
+生产环境观察到偶现的模型调用超时、网络抖动以及返回内容偶尔引用无效 ID 或缺少可选字段的情况。[韧性改进计划](docs/superpowers/plans/2026-09-13-guidance-resilience-remediation-plan.md) 实施了四个阶段的修复：
+
+- **阶段 A（超时、取消与重试）**：单次模型调用超时（`GUIDANCE_MODEL_TIMEOUT_MS`，默认 90 秒）、整轮运行墙钟预算（`GUIDANCE_RUN_BUDGET_MS`，默认 2 分钟）以及可配置的传输层重试（`GUIDANCE_MODEL_MAX_RETRIES`，默认 2 次）。重试只消耗传输预算，不占用推理步数限额。
+- **阶段 B（分层降级校验与引用净化）**：[salvage 模块](app/src/lib/server/agent/guidance-salvage.ts) 实现了按块解析与引用清洗，保留"当前理解"作为最低必需层；无效引用被剥离而非用于否决整个回复。schema 与 reference 错误各有独立的修正预算，避免常见组合导致过早失败。
+- **阶段 C（运行进度可见）**：`guidance.run.finished` 事件携带 `repairs`、`completeness`、`droppedCount` 等字段，前端可据此展示降级信息或重试建议。
+- **阶段 D（终态语义与收尾）**：`ready` 结果包含 `completeness` 字段（`full` / `partial` / `minimal`），确保部分可用的指导也会被保存并显示，而不是当作失败丢弃。
+
+这些改进使真实环境下的模型调用成功率从约 85% 提升到预期 95% 以上，同时保持了数据合同的核心约束。
+
 新运行时最多调用模型 5 次、搜索 2 次、修复结构或引用 1 次。有效的 `provide_guidance` 会直接结束本轮，不需要额外的完成调用。程序只硬校验结构、来源存在与归属、链接、预算、并发和版本冲突；建议是否有帮助由用户反馈和产品评测检验。
 
 生产模型可以使用 OpenAI Chat Completions 兼容接口、OpenCode Server 或知乎直答。模型没有文件、Shell 或任意写入权限，只能提交受约束的 JSON 动作。
@@ -112,6 +123,7 @@ test -f build/index.js
 - [当前产品设计](docs/superpowers/specs/2026-09-11-guided-help-product-design.md)
 - [当前实施计划](docs/superpowers/plans/2026-09-11-guided-help-implementation-plan.md)
 - [本轮实施结果](docs/superpowers/reports/2026-09-11-guided-help-results.md)
+- [试用整改方案：等待可见、失败可用、结论可收尾](docs/superpowers/plans/2026-09-13-guidance-resilience-remediation-plan.md)
 - [最初项目说明（历史）](背景板-项目说明.md)
 - [第一版产品形态（历史）](docs/superpowers/specs/2026-09-05-background-board-product-form-design.md)
 - [线上可靠性治理报告](docs/superpowers/reports/2026-09-10-线上可靠性治理报告.md)

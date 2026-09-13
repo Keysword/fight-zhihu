@@ -1,6 +1,24 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { createModelClient, ModelClientError, resolveModelConfiguration } from './model-client';
+import {
+	createModelClient,
+	ModelClientError,
+	resolveModelConfiguration,
+	resolveModelTimeoutMs
+} from './model-client';
+
+function pendingUntilAborted(signal: AbortSignal | null | undefined): Promise<Response> {
+	return new Promise<Response>((_resolve, reject) => {
+		const fail = () => reject(new DOMException('aborted', 'AbortError'));
+		if (!signal) return;
+		if (signal.aborted) fail();
+		else signal.addEventListener('abort', fail);
+	});
+}
+
+function neverResolvingFetch(): typeof fetch {
+	return vi.fn<typeof fetch>((_input, init) => pendingUntilAborted(init?.signal));
+}
 
 describe('model client', () => {
 	it('prefers an existing OpenCode general-agent server over the Zhihu answer model', () => {
@@ -129,5 +147,116 @@ describe('model client', () => {
 				([url, init]) => String(url).endsWith('/session/session-1') && init?.method === 'DELETE'
 			)
 		).toBe(true);
+	});
+
+	it('rejects a hanging upstream as a retryable timeout within its own deadline', async () => {
+		const fetchImpl = neverResolvingFetch();
+		const client = createModelClient(
+			{ url: 'https://example.com/v1/chat/completions', apiKey: 'key', model: 'agent', isZhihu: false },
+			{ fetchImpl, timeoutMs: 40 }
+		);
+
+		const started = Date.now();
+		const error = await client.complete([{ role: 'user', content: 'hang' }]).catch((cause) => cause);
+
+		expect(error).toBeInstanceOf(ModelClientError);
+		expect(error).toMatchObject({ reason: 'timeout', retryable: true });
+		expect(Date.now() - started).toBeLessThan(2_000);
+	});
+
+	it('reports caller cancellation as non-retryable rather than as its own timeout', async () => {
+		const fetchImpl = neverResolvingFetch();
+		const client = createModelClient(
+			{ url: 'https://example.com/v1/chat/completions', apiKey: 'key', model: 'agent', isZhihu: false },
+			{ fetchImpl, timeoutMs: 5_000 }
+		);
+		const controller = new AbortController();
+		const pending = client.complete([{ role: 'user', content: 'hang' }], {
+			signal: controller.signal
+		});
+		controller.abort();
+
+		await expect(pending).rejects.toMatchObject({ reason: 'cancelled', retryable: false });
+	});
+
+	it.each([
+		[429, true],
+		[503, true],
+		[400, false],
+		[404, false]
+	])('classifies HTTP %i as retryable=%s', async (status, retryable) => {
+		const fetchImpl = vi.fn<typeof fetch>(() => Promise.resolve(new Response('', { status })));
+		const client = createModelClient(
+			{ url: 'https://example.com/v1/chat/completions', apiKey: 'key', model: 'agent', isZhihu: false },
+			{ fetchImpl }
+		);
+
+		await expect(client.complete([{ role: 'user', content: 'x' }])).rejects.toMatchObject({
+			reason: 'http',
+			status,
+			retryable
+		});
+	});
+
+	it('treats an unusable payload as non-retryable and a dropped connection as retryable', async () => {
+		const unusable = createModelClient(
+			{ url: 'https://example.com/v1/chat/completions', apiKey: 'key', model: 'agent', isZhihu: false },
+			{ fetchImpl: vi.fn<typeof fetch>(() => Promise.resolve(new Response('{}', { status: 200 }))) }
+		);
+		const dropped = createModelClient(
+			{ url: 'https://example.com/v1/chat/completions', apiKey: 'key', model: 'agent', isZhihu: false },
+			{ fetchImpl: vi.fn<typeof fetch>(() => Promise.reject(new TypeError('socket hang up'))) }
+		);
+
+		await expect(unusable.complete([{ role: 'user', content: 'x' }])).rejects.toMatchObject({
+			reason: 'payload',
+			retryable: false
+		});
+		await expect(dropped.complete([{ role: 'user', content: 'x' }])).rejects.toMatchObject({
+			reason: 'network',
+			retryable: true
+		});
+	});
+
+	it('still releases the OpenCode session when the parent call is cancelled, keeping the original reason', async () => {
+		const controller = new AbortController();
+		const fetchImpl = vi.fn<typeof fetch>((input, init) => {
+			const url = String(input);
+			if (url.endsWith('/session') && init?.method === 'POST') {
+				return Promise.resolve(new Response(JSON.stringify({ id: 'session-9' }), { status: 200 }));
+			}
+			if (url.endsWith('/message')) {
+				controller.abort();
+				return pendingUntilAborted(init?.signal);
+			}
+			return Promise.resolve(new Response('true', { status: 500 }));
+		});
+		const client = createModelClient(
+			{
+				url: 'http://127.0.0.1:4096',
+				apiKey: 'password',
+				model: 'server-default',
+				isZhihu: false,
+				protocol: 'opencode',
+				username: 'opencode'
+			},
+			{ fetchImpl }
+		);
+
+		await expect(
+			client.complete([{ role: 'user', content: 'case' }], { signal: controller.signal })
+		).rejects.toMatchObject({ reason: 'cancelled', retryable: false });
+		const cleanup = fetchImpl.mock.calls.find(
+			([url, init]) => String(url).endsWith('/session/session-9') && init?.method === 'DELETE'
+		);
+		expect(cleanup).toBeDefined();
+		expect(cleanup?.[1]?.signal?.aborted).toBe(false);
+	});
+
+	it('falls back to the default timeout for absent or nonsensical configuration', () => {
+		expect(resolveModelTimeoutMs({ GUIDANCE_MODEL_TIMEOUT_MS: '45000' })).toBe(45_000);
+		expect(resolveModelTimeoutMs({})).toBe(30_000);
+		expect(resolveModelTimeoutMs({ GUIDANCE_MODEL_TIMEOUT_MS: '-5' })).toBe(30_000);
+		expect(resolveModelTimeoutMs({ GUIDANCE_MODEL_TIMEOUT_MS: 'soon' })).toBe(30_000);
 	});
 });

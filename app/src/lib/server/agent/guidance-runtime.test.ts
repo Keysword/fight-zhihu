@@ -6,8 +6,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { GuidanceDraft, SourceRef } from '$lib/domain/guidance';
 import type { ExternalClue } from '$lib/domain/types';
 import { createCaseRepository, type CaseRepository } from '$lib/server/cases/repository';
-import type { ModelClient, ModelMessage } from './model-client';
+import { ModelClientError, type ModelClient, type ModelMessage } from './model-client';
 import { createGuidanceRuntime } from './guidance-runtime';
+
+function timeoutError(): ModelClientError {
+	return new ModelClientError('Agent 模型响应超时', { reason: 'timeout' });
+}
 
 const directories: string[] = [];
 
@@ -282,12 +286,13 @@ describe('guidance runtime', () => {
 		expect(model.calls[1]?.at(-1)?.content).toContain('missing');
 	});
 
-	it('shares one repair budget between protocol and reference errors', async () => {
+	it('gives schema and reference each one repair before salvaging or giving up', async () => {
 		const repo = repository();
 		const created = createCase(repo);
 		const model = scriptedModel([
 			'{"type":"provide_guidance"}',
-			provide(draft({ sources: [{ kind: 'evidence', id: 'missing' }] }))
+			provide(draft({ sources: [{ kind: 'evidence', id: 'missing' }] })),
+			provide(draft())
 		]);
 
 		const result = await createGuidanceRuntime({
@@ -296,13 +301,8 @@ describe('guidance runtime', () => {
 			zhihu: zhihuClient()
 		}).run(created.id);
 
-		expect(result).toMatchObject({
-			outcome: 'failed',
-			error: { code: 'GUIDANCE_INVALID' },
-			modelCallCount: 2,
-			repairCount: 1
-		});
-		expect(repo.listGuidance(created.id)).toEqual([]);
+		expect(result).toMatchObject({ outcome: 'ready', modelCallCount: 3, repairCount: 2 });
+		expect(model.calls).toHaveLength(3);
 	});
 
 	it('rejects cross-case, wrong-kind, and prior-run external references before saving', async () => {
@@ -622,5 +622,115 @@ describe('guidance runtime', () => {
 		expect(JSON.stringify(events[0]?.payload)).not.toMatch(
 			/prompt|raw|evidence|input|clue|无模型|尚未配置可用的 Agent 模型/i
 		);
+	});
+
+	it('retries a timed-out call, succeeds, and charges the step budget only once', async () => {
+		const repo = repository();
+		const created = createCase(repo);
+		const model = scriptedModel([timeoutError(), provide(draft())]);
+		const sleeps: number[] = [];
+
+		const result = await createGuidanceRuntime({
+			repository: repo,
+			model,
+			zhihu: zhihuClient(),
+			sleep: async (durationMs) => void sleeps.push(durationMs),
+			random: () => 0.5
+		}).run(created.id);
+
+		expect(result).toMatchObject({ outcome: 'ready', modelCallCount: 1 });
+		expect(model.calls).toHaveLength(2);
+		expect(sleeps).toEqual([500]);
+		const records = finishedEvents(repo, created.id)[0]?.payload
+			.modelCalls as Array<Record<string, unknown>>;
+		expect(records).toHaveLength(2);
+		expect(records[0]).toMatchObject({ index: 1, attempt: 1, ok: false, retryReason: 'timeout' });
+		expect(records[1]).toMatchObject({ index: 1, attempt: 2, ok: true, retryReason: null });
+	});
+
+	it('gives up as MODEL_CALL_FAILED after the retry budget without spending extra reasoning steps', async () => {
+		const repo = repository();
+		const created = createCase(repo);
+		const model = scriptedModel([timeoutError()]);
+
+		const result = await createGuidanceRuntime({
+			repository: repo,
+			model,
+			zhihu: zhihuClient(),
+			sleep: async () => {},
+			random: () => 0.5
+		}).run(created.id);
+
+		expect(result).toMatchObject({
+			outcome: 'failed',
+			error: { code: 'MODEL_CALL_FAILED' },
+			modelCallCount: 1
+		});
+		expect(model.calls).toHaveLength(3);
+	});
+
+	it('does not retry a failure the client classified as non-retryable', async () => {
+		const repo = repository();
+		const created = createCase(repo);
+		const model = scriptedModel([
+			new ModelClientError('bad request', { reason: 'http', status: 400 })
+		]);
+
+		const result = await createGuidanceRuntime({
+			repository: repo,
+			model,
+			zhihu: zhihuClient(),
+			sleep: async () => {}
+		}).run(created.id);
+
+		expect(result).toMatchObject({ outcome: 'failed', error: { code: 'MODEL_CALL_FAILED' } });
+		expect(model.calls).toHaveLength(1);
+	});
+
+	it('stops issuing model calls once the wall-clock budget is gone', async () => {
+		const repo = repository();
+		const created = createCase(repo);
+		let clock = 0;
+		const model = scriptedModel([
+			JSON.stringify({ type: 'search_global', query: '住宿流程', count: 1 })
+		]);
+
+		const result = await createGuidanceRuntime({
+			repository: repo,
+			model,
+			zhihu: zhihuClient([]),
+			runBudgetMs: 1_000,
+			now: () => (clock += 400),
+			sleep: async () => {}
+		}).run(created.id);
+
+		expect(result).toMatchObject({
+			outcome: 'failed',
+			error: { code: 'TIME_BUDGET_EXCEEDED' }
+		});
+		expect(model.calls.length).toBeLessThan(5);
+	});
+
+	it('returns ready with partial completeness when salvage succeeds', async () => {
+		const repo = repository();
+		const created = createCase(repo);
+		const model = scriptedModel([
+			provide({
+				understanding: { summary: '只保留了理解。', openPoint: null, sources: [] },
+				communicationChecks: [{ bad: 'schema' }],
+				nextStep: null,
+				question: null,
+				changeSummary: null
+			})
+		]);
+
+		const result = await createGuidanceRuntime({ repository: repo, model, zhihu: zhihuClient() }).run(
+			created.id
+		);
+
+		expect(result.outcome).toBe('ready');
+		expect(result.guidance?.completeness).toBe('minimal');
+		expect(result.guidance?.draft.understanding.summary).toBe('只保留了理解。');
+		expect(result.guidance?.dropped.length).toBeGreaterThan(0);
 	});
 });
