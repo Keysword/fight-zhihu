@@ -118,7 +118,10 @@ async function runFullGuidance(options: {
 }): Promise<RunOutcome | 'budget'> {
 	const { session, arm, policy, scenarioId, repeat } = options;
 	const repository = isolatedRepository();
-	const materialised = materialiseScenario(repository, latencyScenarios.find((s) => s.id === scenarioId)!);
+	const materialised = materialiseScenario(
+		repository,
+		latencyScenarios.find((s) => s.id === scenarioId)!
+	);
 	const configurationHash = `${session.commit}:${arm.name}:${policy.mode}`;
 	const model = arm.createClient({ onModelRequest: () => {} });
 	const countedModel: ModelClient | null = model
@@ -169,10 +172,7 @@ async function runFullGuidance(options: {
 		firstContentMs: firstContentOf(modelCalls),
 		errorCode: result.error?.code ?? null
 	});
-	session.recordAttempts(
-		`${arm.name}-${scenarioId}-r${repeat}`,
-		payload
-	);
+	session.recordAttempts(`${arm.name}-${scenarioId}-r${repeat}`, payload);
 	session.recordOutput(
 		session.phase,
 		arm.name,
@@ -268,8 +268,7 @@ phaseSuite('transport', () => {
 	for (const [pairIndex, scenarioId] of scenarioIds.entries()) {
 		for (let repeat = 1; repeat <= 3; repeat += 1) {
 			// 交错臂顺序：第一组 A1/A2，下一组 A2/A1，串行执行消除抢占影响。
-			const orderedArms =
-				pairIndex % 2 === 0 ? configuredArms : [...configuredArms].reverse();
+			const orderedArms = pairIndex % 2 === 0 ? configuredArms : [...configuredArms].reverse();
 			for (const arm of orderedArms) {
 				it(`transport ${arm.name} ${scenarioId} repeat ${repeat}`, async (ctx) => {
 					if (session.remainingModelRequests < 1) return ctx.skip();
@@ -281,7 +280,7 @@ phaseSuite('transport', () => {
 					const startedAt = Date.now();
 					let outcome = 'model_failed';
 					let errorCode: string | null = null;
-					let firstContentMs: number | null = null;
+					const firstContentMs: number | null = null;
 					try {
 						const raw = await (client as ModelClient).complete(messages, { timeoutMs: 90_000 });
 						try {
@@ -340,8 +339,11 @@ phaseSuite('policy', () => {
 	for (const [pairIndex, scenarioId] of scenarioIds.entries()) {
 		for (let repeat = 1; repeat <= 2; repeat += 1) {
 			const ordered = pairIndex % 2 === 0 ? armPolicies : [...armPolicies].reverse();
-			for (const [armIndex, entry] of ordered.entries()) {
-				const armName = entry.policy.mode === 'fast' ? `${entry.arm.name}-fast` : `${entry.arm.name}-legacypolicy`;
+			for (const entry of ordered) {
+				const armName =
+					entry.policy.mode === 'fast'
+						? `${entry.arm.name}-fast`
+						: `${entry.arm.name}-legacypolicy`;
 				it(`policy ${armName} ${scenarioId} repeat ${repeat}`, async (ctx) => {
 					if (!sdkArm) return ctx.skip();
 					if (session.remainingModelRequests < 1) return ctx.skip();
@@ -354,7 +356,9 @@ phaseSuite('policy', () => {
 						cache: null
 					});
 					if (outcome === 'budget') return ctx.skip();
-					expect(['ready', 'needs_input', 'failed', 'superseded']).toContain(outcome.result.outcome);
+					expect(['ready', 'needs_input', 'failed', 'superseded']).toContain(
+						outcome.result.outcome
+					);
 				});
 			}
 		}
@@ -374,12 +378,14 @@ phaseSuite('search', () => {
 		{ scenarioId: 'eval-insufficient-materials', expectSearch: false }
 	] as const;
 
-	for (const [index, entry] of searchScenarios.entries()) {
+	for (const entry of searchScenarios) {
 		for (let repeat = 1; repeat <= 3; repeat += 1) {
 			it(`search ${entry.expectSearch ? 'required' : 'normal'} ${entry.scenarioId} repeat ${repeat}`, async (ctx) => {
 				if (!sdkArm || !process.env.ZHIHU_ACCESS_SECRET) return ctx.skip();
 				if (session.remainingModelRequests < 1) return ctx.skip();
-				const zhihu = createZhihuClient({ accessSecret: process.env.ZHIHU_ACCESS_SECRET as string });
+				const zhihu = createZhihuClient({
+					accessSecret: process.env.ZHIHU_ACCESS_SECRET as string
+				});
 				const countedZhihu: ZhihuClient = {
 					searchZhihu: async (query, count) => {
 						session.reserveSearchRequests(1);
@@ -443,7 +449,13 @@ phaseSuite('search', () => {
 					firstContentMs: null,
 					errorCode: result.error?.code ?? null
 				});
-				session.recordOutput('search', 'sdk-fast-realzhihu', entry.scenarioId, repeat, result.guidance);
+				session.recordOutput(
+					'search',
+					'sdk-fast-realzhihu',
+					entry.scenarioId,
+					repeat,
+					result.guidance
+				);
 				expect(['ready', 'needs_input', 'failed']).toContain(result.outcome);
 			});
 		}

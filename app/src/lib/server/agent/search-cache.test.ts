@@ -21,7 +21,12 @@ function clue(id: string): ExternalClue {
 describe('search cache', () => {
 	it('returns the cached clues for the same case and key', () => {
 		const cache = createSearchCache();
-		cache.set('case-1', { source: 'zhihu', query: '宿舍 入住', count: 3 }, [clue('zhihu-1')], 1_000);
+		cache.set(
+			'case-1',
+			{ source: 'zhihu', query: '宿舍 入住', count: 3 },
+			[clue('zhihu-1')],
+			1_000
+		);
 		expect(cache.get('case-1', { source: 'zhihu', query: '宿舍 入住', count: 3 }, 2_000)).toEqual([
 			clue('zhihu-1')
 		]);

@@ -198,7 +198,9 @@ describe('guidance prompt deterministic deduplication', () => {
 				createdAt: '2026-09-13T00:00:00.000Z'
 			}
 		];
-		const serialized = buildGuidanceMessages(base).map((m) => m.content).join('\n');
+		const serialized = buildGuidanceMessages(base)
+			.map((m) => m.content)
+			.join('\n');
 		expect(serialized).toContain('不能直接联系物业。');
 		expect(serialized).not.toContain('requestId');
 		expect(serialized).not.toContain('0e2c1a26');
@@ -218,7 +220,9 @@ describe('guidance prompt deterministic deduplication', () => {
 			createdAt: '2026-09-13T00:00:00.000Z'
 		};
 		base.inputs = [input, { ...input }];
-		const serialized = buildGuidanceMessages(base).map((m) => m.content).join('\n');
+		const serialized = buildGuidanceMessages(base)
+			.map((m) => m.content)
+			.join('\n');
 		expect(serialized.match(/今晚必须决定是否带全部行李。/g)).toHaveLength(1);
 	});
 
@@ -229,7 +233,9 @@ describe('guidance prompt deterministic deduplication', () => {
 			{ id: 'g-1', contextRevision: 3, draft: priorDraft() },
 			{ id: 'g-2', contextRevision: 1, draft: priorDraft('更早的一版。') }
 		];
-		const serialized = buildGuidanceMessages(base).map((m) => m.content).join('\n');
+		const serialized = buildGuidanceMessages(base)
+			.map((m) => m.content)
+			.join('\n');
 		// g-1 只出现在“上一版指导”分栏；g-2 保留在被引用分栏。
 		const priorSection = serialized.split('【被本轮输入引用的历史指导')[0];
 		const referencedSection = serialized.split('【被本轮输入引用的历史指导')[1];
@@ -245,7 +251,9 @@ describe('guidance prompt deterministic deduplication', () => {
 			{ id: 'g-2', contextRevision: 1, draft: priorDraft() },
 			{ id: 'g-2', contextRevision: 1, draft: priorDraft() }
 		];
-		const serialized = buildGuidanceMessages(base).map((m) => m.content).join('\n');
+		const serialized = buildGuidanceMessages(base)
+			.map((m) => m.content)
+			.join('\n');
 		expect(serialized.match(/"id":"g-2"/g)).toHaveLength(1);
 	});
 });

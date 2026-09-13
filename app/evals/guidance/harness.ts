@@ -1,6 +1,13 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { execSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, appendFileSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	appendFileSync,
+	readFileSync,
+	writeFileSync
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -9,11 +16,7 @@ import { VERSION as SDK_VERSION } from 'openai';
 
 import type { GuidanceSnapshot } from '$lib/domain/guidance';
 import { createCaseRepository, type CaseRepository } from '$lib/server/cases/repository';
-import {
-	createModelClient,
-	type ModelClient,
-	type ModelMessage
-} from '$lib/server/agent/model-client';
+import { createModelClient, type ModelClient } from '$lib/server/agent/model-client';
 import { createSdkModelClient } from '$lib/server/agent/sdk-model-client';
 import { createZhihuClient, type ZhihuClient } from '$lib/server/zhihu/client';
 import scenarioFile from './latency-cases.json';
@@ -26,7 +29,10 @@ export interface LatencyScenario {
 	goal: string;
 	confusion: string;
 	evidence: Array<{ sourceLabel: string; content: string }>;
-	inputs: Array<{ kind: 'context' | 'correction' | 'constraint' | 'action_result' | 'question'; content: string }>;
+	inputs: Array<{
+		kind: 'context' | 'correction' | 'constraint' | 'action_result' | 'question';
+		content: string;
+	}>;
 	shouldFocus: string[];
 	mustAvoid: string[];
 }
@@ -120,8 +126,8 @@ export interface ArmDefinition {
 	createClient: (options: { onModelRequest: () => void }) => ModelClient | null;
 }
 
-/** SDK 直连臂（weixin/openai 兼容端点）。 */
-function sdkArm(armName: string, stream: boolean, label: string): ArmDefinition {
+/** SDK 直连臂（openai 兼容端点）。 */
+function sdkArm(armName: string, stream: boolean): ArmDefinition {
 	const baseURL = process.env.AGENT_SDK_BASE_URL ?? '';
 	const apiKey = process.env.AGENT_API_KEY ?? '';
 	const model = process.env.AGENT_MODEL ?? '';
@@ -201,14 +207,11 @@ function opencodeArm(): ArmDefinition {
 }
 
 export function armsForTransportPhase(): ArmDefinition[] {
-	return [legacyHttpArm(), sdkArm('sdk-nonstream', false, process.env.AGENT_MODEL ?? 'unconfigured'), opencodeArm()];
+	return [legacyHttpArm(), sdkArm('sdk-nonstream', false), opencodeArm()];
 }
 
 export function sdkOnlyArms(): ArmDefinition[] {
-	return [
-		sdkArm('sdk-nonstream', false, process.env.AGENT_MODEL ?? 'unconfigured'),
-		sdkArm('sdk-stream', true, process.env.AGENT_MODEL ?? 'unconfigured')
-	];
+	return [sdkArm('sdk-nonstream', false), sdkArm('sdk-stream', true)];
 }
 
 export interface ZhihuCounter {
@@ -222,8 +225,7 @@ export function countedZhihuClient(limit: number, onLimit: () => never): ZhihuCo
 		: null;
 	let requests = 0;
 	const countedSearch =
-		(method: 'searchZhihu' | 'searchGlobal') =>
-		async (query: string, count?: number) => {
+		(method: 'searchZhihu' | 'searchGlobal') => async (query: string, count?: number) => {
 			if (!inner) throw new Error('ZHIHU_ACCESS_SECRET 未配置，无法执行真实搜索');
 			if (requests + 1 > limit) throw onLimit();
 			requests += 1;
@@ -305,9 +307,9 @@ export class EvalSession {
 
 	/** 模型臂工厂：包装计数与预算。 */
 	modelClientFor(arm: ArmDefinition, timeoutMs: number): ModelClient | null {
-		const session = this;
+		const reserve = (count: number): void => this.reserveModelRequests(count);
 		const inner = arm.createClient({
-			onModelRequest: () => session.reserveModelRequests(1)
+			onModelRequest: () => reserve(1)
 		});
 		if (!inner) return null;
 		return {
@@ -318,10 +320,7 @@ export class EvalSession {
 
 	recordRow(row: EvaluationRow): void {
 		this.rows.push(row);
-		appendFileSync(
-			join(dataDirectory, `results-${this.phase}.jsonl`),
-			`${JSON.stringify(row)}\n`
-		);
+		appendFileSync(join(dataDirectory, `results-${this.phase}.jsonl`), `${JSON.stringify(row)}\n`);
 	}
 
 	recordAttempts(sampleId: string, finishedPayload: Record<string, unknown>): void {
@@ -332,7 +331,13 @@ export class EvalSession {
 		);
 	}
 
-	recordOutput(phase: string, arm: string, scenarioId: string, repeat: number, snapshot: GuidanceSnapshot | null): void {
+	recordOutput(
+		phase: string,
+		arm: string,
+		scenarioId: string,
+		repeat: number,
+		snapshot: GuidanceSnapshot | null
+	): void {
 		const directory = join(dataDirectory, 'outputs', phase);
 		mkdirSync(directory, { recursive: true });
 		writeFileSync(

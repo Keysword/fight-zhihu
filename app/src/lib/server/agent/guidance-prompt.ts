@@ -112,9 +112,7 @@ export function buildGuidanceMessages(context: GuidancePromptContext): ModelMess
 		contextRevision: context.case.contextRevision
 	};
 	// 确定性去重：同一输入 id 只出现一次，不删除任何正文或引用关系。
-	const dedupedInputs = [
-		...new Map(context.inputs.map((input) => [input.id, input])).values()
-	];
+	const dedupedInputs = [...new Map(context.inputs.map((input) => [input.id, input])).values()];
 	// 上一版指导若同时被本轮输入引用，只保留 priorGuidance 一处，不重复传输。
 	const priorId = context.priorGuidance?.id ?? null;
 	const seenReferenced = new Set<string>();

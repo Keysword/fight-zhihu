@@ -59,9 +59,7 @@ function override(
 	if (parsed === null) {
 		// 非法显式覆盖在 fast/sdk 配置下报明确配置错误，禁止静默回退到更慢路由。
 		if (mode === 'fast' || strictNumeric) {
-			throw new GuidancePolicyConfigurationError(
-				`${name} 配置无效：${raw}（需要正整数毫秒值）`
-			);
+			throw new GuidancePolicyConfigurationError(`${name} 配置无效：${raw}（需要正整数毫秒值）`);
 		}
 		return fallback;
 	}
@@ -89,11 +87,35 @@ export function resolveGuidancePolicy(
 	return {
 		mode,
 		runBudgetMs: override(values, 'GUIDANCE_RUN_BUDGET_MS', base.runBudgetMs, mode, strictNumeric),
-		modelTimeoutMs: override(values, 'GUIDANCE_MODEL_TIMEOUT_MS', base.modelTimeoutMs, mode, strictNumeric),
-		maxModelRetries: override(values, 'GUIDANCE_MODEL_MAX_RETRIES', base.maxModelRetries, mode, strictNumeric),
-		searchTimeoutMs: override(values, 'GUIDANCE_SEARCH_TIMEOUT_MS', base.searchTimeoutMs, mode, strictNumeric),
+		modelTimeoutMs: override(
+			values,
+			'GUIDANCE_MODEL_TIMEOUT_MS',
+			base.modelTimeoutMs,
+			mode,
+			strictNumeric
+		),
+		maxModelRetries: override(
+			values,
+			'GUIDANCE_MODEL_MAX_RETRIES',
+			base.maxModelRetries,
+			mode,
+			strictNumeric
+		),
+		searchTimeoutMs: override(
+			values,
+			'GUIDANCE_SEARCH_TIMEOUT_MS',
+			base.searchTimeoutMs,
+			mode,
+			strictNumeric
+		),
 		maxSearches: override(values, 'GUIDANCE_MAX_SEARCHES', base.maxSearches, mode, strictNumeric),
-		maxModelSteps: override(values, 'GUIDANCE_MAX_MODEL_STEPS', base.maxModelSteps, mode, strictNumeric)
+		maxModelSteps: override(
+			values,
+			'GUIDANCE_MAX_MODEL_STEPS',
+			base.maxModelSteps,
+			mode,
+			strictNumeric
+		)
 	};
 }
 

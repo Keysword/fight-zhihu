@@ -648,8 +648,7 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 					// fast 模式下剩余时间不足以再发起一次模型请求时，优先 salvage 可用草稿。
 					const remainingForRepairMs = runBudgetMs - (now() - startedAt);
 					const repairAffordable =
-						repairs.schema < 1 &&
-						!(policyMode === 'fast' && remainingForRepairMs < 10_000);
+						repairs.schema < 1 && !(policyMode === 'fast' && remainingForRepairMs < 10_000);
 					if (repairAffordable) {
 						recordStep('repairing', '正在重新整理');
 						repairs.schema += 1;

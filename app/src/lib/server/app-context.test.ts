@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { AgentTransportConfigurationError, guidanceModeEnabled, selectAgentTransport } from './app-context';
+import {
+	AgentTransportConfigurationError,
+	guidanceModeEnabled,
+	selectAgentTransport
+} from './app-context';
 
 describe('guidance mode configuration', () => {
 	it('enables the server-driven mode only for the exact value 1', () => {
@@ -19,7 +23,9 @@ describe('agent transport selection', () => {
 			AGENT_MODEL: 'legacy-model'
 		});
 		expect(legacyWithApiUrl.transport).toBe('legacy');
-		expect(legacyWithApiUrl.modelConfiguration?.url).toBe('https://legacy.example/v1/chat/completions');
+		expect(legacyWithApiUrl.modelConfiguration?.url).toBe(
+			'https://legacy.example/v1/chat/completions'
+		);
 		expect(legacyWithApiUrl.sdkConfiguration).toBeNull();
 
 		const zhidaFallback = selectAgentTransport({ ZHIHU_ACCESS_SECRET: 'zhihu-secret' });

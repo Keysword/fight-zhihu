@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { expect, type Page, type APIRequestContext, test } from '@playwright/test';
 
 const BASE = '/background-board';
@@ -244,4 +245,77 @@ test('guided entry copy describes provisional understanding and a breakthrough s
 	await expect(page.getByText('建议始终可以补充，也可以纠正')).toBeVisible();
 	await page.getByRole('link', { name: '新建一件卡住的事' }).click();
 	await expect(page.getByText('先形成一版暂时理解，再找一个可以试的突破点')).toBeVisible();
+});
+
+test('supersedes an in-flight run when newer input arrives and keeps the newest guidance', async ({
+	page,
+	request
+}) => {
+	const caseId = await createGuidedCase(page, { title: '慢速替代案例' });
+
+	// 提交第一版补充：慢速夹具让这一轮保持在飞。
+	await submitFeedback(page, '有新回复', '第一版补充，这一轮稍后会被替代。');
+	// 等到首次轮询显示出“正在理解”：此刻旧运行确实已经启动且在飞行中。
+	await expect(page.getByText('正在理解你的材料')).toBeVisible({ timeout: 20_000 });
+
+	// 新输入提升 contextRevision：服务端应取消旧运行并启动新一轮。
+	const newerInput = await request.post(`${BASE}/api/cases/${caseId}/inputs`, {
+		data: {
+			kind: 'context',
+			content: '第二版补充：请以这一版为准。',
+			guidanceId: null,
+			requestId: randomUUID(),
+			replacements: []
+		}
+	});
+	expect(newerInput.ok()).toBe(true);
+	await request.post(`${BASE}/api/cases/${caseId}/guidance/runs`);
+
+	// 旧运行以 superseded 结束，界面明确显示“已由更新后的整理替代”。
+	await expect(page.getByText('已由更新后的整理替代')).toBeVisible({ timeout: 20_000 });
+
+	// 新一轮以最新补充完成；旧结果不能成为当前理解。
+	await expect(async () => {
+		const view = await caseView(request, caseId);
+		expect(view.guidance?.draft.understanding.summary ?? '').toContain('第二版补充');
+	}).toPass({ timeout: 30_000 });
+	await page.reload();
+	await expect(
+		page.getByText('已把你的最新补充“第二版补充：请以这一版为准。”').first()
+	).toBeVisible();
+	const persisted = await caseView(request, caseId);
+	const outcomes = persisted.events
+		.filter((event: { type: string }) => event.type === 'guidance.run.finished')
+		.map((event: { payload: { outcome: string } }) => event.payload.outcome);
+	expect(outcomes.at(-2)).toBe('superseded');
+	expect(outcomes.at(-1)).toBe('ready');
+});
+
+test('reports unavailable search clearly and still finishes guidance without leaking raw JSON', async ({
+	page,
+	request
+}) => {
+	const caseId = await createGuidedCase(page, { title: '搜索失败案例' });
+	const persisted = await caseView(request, caseId);
+	const finished = persisted.events.find(
+		(event: { type: string }) => event.type === 'guidance.run.finished'
+	);
+	const searches = (finished?.payload as { searches?: Array<{ outcome: string }> }).searches ?? [];
+	expect(searches).toHaveLength(1);
+	expect(searches[0].outcome).toBe('unavailable');
+	// 指导仍然完成，并且正文没有把原始 JSON 泄漏到界面。
+	await expect(page.getByText('先围绕').first()).toBeVisible();
+	await expect(page.getByText('{"type":"provide_guidance"')).toHaveCount(0);
+});
+
+test('keeps an invalid source reference out of the final guidance', async ({ page }) => {
+	// “非法来源”夹具会引用不存在的来源 id：引用校验必须拦下它。
+	const caseId = await createGuidedCase(page, { title: '非法来源案例' });
+	await expect(page.getByRole('heading', { name: '当前理解' })).toBeVisible();
+	const response = await page.request.get(`${BASE}/api/cases/${caseId}`);
+	expect(response.ok()).toBe(true);
+	const view = (await response.json()).data;
+	expect(view.guidance).not.toBeNull();
+	const sources = view.guidance.draft.understanding.sources as Array<{ id: string }>;
+	expect(sources.some((source) => source.id === 'evidence-not-exist')).toBe(false);
 });

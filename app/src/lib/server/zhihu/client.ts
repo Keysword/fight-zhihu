@@ -92,9 +92,7 @@ export function createZhihuClient(options: ZhihuClientOptions): ZhihuClient {
 		url.searchParams.set('Count', String(normalizedCount));
 		// 自身截止时间与整轮取消信号组合；GET 与 body 消费共用同一 signal。
 		const deadline = AbortSignal.timeout(callOptions?.timeoutMs ?? DEFAULT_SEARCH_TIMEOUT_MS);
-		const signal = callOptions?.signal
-			? AbortSignal.any([callOptions.signal, deadline])
-			: deadline;
+		const signal = callOptions?.signal ? AbortSignal.any([callOptions.signal, deadline]) : deadline;
 
 		let response: Response;
 		try {
@@ -108,7 +106,10 @@ export function createZhihuClient(options: ZhihuClientOptions): ZhihuClient {
 				signal
 			});
 		} catch (error) {
-			if (error instanceof DOMException || (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError'))) {
+			if (
+				error instanceof DOMException ||
+				(error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError'))
+			) {
 				if (callOptions?.signal?.aborted) throw new ZhihuApiError('本轮搜索已取消');
 				throw new ZhihuApiError('知乎开放平台请求超时');
 			}

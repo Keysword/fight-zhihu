@@ -2,11 +2,26 @@
 	"version": 1,
 	"purpose": "固定合成性能场景：只用于延迟/协议对照与质量回归，不包含任何生产案例内容。文本在实验开始前冻结，不得按模型输出临时修改评分标准。",
 	"provenance": [
-		{ "caseId": "eval-insufficient-materials", "derivedFrom": "dorm-promise-is-not-result（简化为单轮）" },
-		{ "caseId": "eval-arrangement-explicit", "derivedFrom": "dorm-arrangement-is-explicit（简化为单轮）" },
-		{ "caseId": "eval-followup-already-tried", "derivedFrom": "already-asked（以 followUp 作为初始输入）" },
-		{ "caseId": "eval-conditional-approval", "derivedFrom": "relayed-approval-condition-lost（以 correction 作为初始输入）" },
-		{ "caseId": "eval-long-history", "derivedFrom": "no-contact-channel / user-corrects-role（扩展为 20 条历史输入）" },
+		{
+			"caseId": "eval-insufficient-materials",
+			"derivedFrom": "dorm-promise-is-not-result（简化为单轮）"
+		},
+		{
+			"caseId": "eval-arrangement-explicit",
+			"derivedFrom": "dorm-arrangement-is-explicit（简化为单轮）"
+		},
+		{
+			"caseId": "eval-followup-already-tried",
+			"derivedFrom": "already-asked（以 followUp 作为初始输入）"
+		},
+		{
+			"caseId": "eval-conditional-approval",
+			"derivedFrom": "relayed-approval-condition-lost（以 correction 作为初始输入）"
+		},
+		{
+			"caseId": "eval-long-history",
+			"derivedFrom": "no-contact-channel / user-corrects-role（扩展为 20 条历史输入）"
+		},
 		{ "caseId": "eval-two-goals-need-question", "derivedFrom": "新建：两个互不相干目标必须追问" }
 	],
 	"cases": [
@@ -22,13 +37,8 @@
 				}
 			],
 			"inputs": [],
-			"shouldFocus": [
-				"保留“是否已落实”的不确定性，不把申请写成结果"
-			],
-			"mustAvoid": [
-				"把“先帮你申请”写成已经获批或已有房间",
-				"编造房间号或领取时间"
-			]
+			"shouldFocus": ["保留“是否已落实”的不确定性，不把申请写成结果"],
+			"mustAvoid": ["把“先帮你申请”写成已经获批或已有房间", "编造房间号或领取时间"]
 		},
 		{
 			"id": "eval-arrangement-explicit",
@@ -51,10 +61,7 @@
 				"承认房间、地点、时间已明确，不制造沟通疑点",
 				"下一步只核对到达时间与领取窗口是否匹配"
 			],
-			"mustAvoid": [
-				"无依据怀疑正式邮件",
-				"凭空增加需要再次确认的环节"
-			]
+			"mustAvoid": ["无依据怀疑正式邮件", "凭空增加需要再次确认的环节"]
 		},
 		{
 			"id": "eval-followup-already-tried",
@@ -77,14 +84,8 @@
 					"content": "我已经给公共邮箱发过两次邮件了，一直没回复，也查不到名单。"
 				}
 			],
-			"shouldFocus": [
-				"不再推荐给同一邮箱重复发同样的邮件",
-				"给出支持日程决策的替代动作或条件分支"
-			],
-			"mustAvoid": [
-				"重复用户已说明无效的动作",
-				"把提交成功当成入选"
-			]
+			"shouldFocus": ["不再推荐给同一邮箱重复发同样的邮件", "给出支持日程决策的替代动作或条件分支"],
+			"mustAvoid": ["重复用户已说明无效的动作", "把提交成功当成入选"]
 		},
 		{
 			"id": "eval-conditional-approval",
@@ -111,10 +112,7 @@
 				"把“尚未批准”“如果审批通过”作为条件而不是结果",
 				"建议核对批准状态或等待审批，而不是先下单"
 			],
-			"mustAvoid": [
-				"把转述包装成组长原话",
-				"丢掉否定/条件，建议直接采购"
-			]
+			"mustAvoid": ["把转述包装成组长原话", "丢掉否定/条件，建议直接采购"]
 		},
 		{
 			"id": "eval-long-history",
@@ -153,10 +151,7 @@
 				"仍然尊重“不能直接联系物业”这一最早限制",
 				"在三个入口中给出一个优先建议，而不是罗列所有选项"
 			],
-			"mustAvoid": [
-				"建议直接联系物业",
-				"丢失长历史中的关键限制"
-			]
+			"mustAvoid": ["建议直接联系物业", "丢失长历史中的关键限制"]
 		},
 		{
 			"id": "eval-two-goals-need-question",

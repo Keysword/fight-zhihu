@@ -5,9 +5,10 @@ const { runGuidance, assertRateLimit } = vi.hoisted(() => ({
 	assertRateLimit: vi.fn()
 }));
 
-vi.mock('$lib/server/app-context', () => ({
-	getCaseService: () => ({ runGuidance })
-}));
+vi.mock('$lib/server/app-context', async (importOriginal) => {
+	const original = await importOriginal<typeof import('$lib/server/app-context')>();
+	return { ...original, getCaseService: () => ({ runGuidance }) };
+});
 vi.mock('$lib/server/rate-limit', async (importOriginal) => {
 	const original = await importOriginal<typeof import('$lib/server/rate-limit')>();
 	return { ...original, assertRateLimit };

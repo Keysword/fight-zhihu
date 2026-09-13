@@ -145,13 +145,13 @@ export function createModelClient(
 	return {
 		async complete(messages, callOptions) {
 			const attemptStartedAt = now();
-			const inputCharacters = messages.reduce((total, message) => total + message.content.length, 0);
+			const inputCharacters = messages.reduce(
+				(total, message) => total + message.content.length,
+				0
+			);
 			let outputCharacters = 0;
 			/** 观测回调异常不得改写请求结果。 */
-			const emitObservation = (
-				failure: ModelClientError | null,
-				observation?: Partial<ModelObservation>
-			): void => {
+			const emitObservation = (observation?: Partial<ModelObservation>): void => {
 				if (!callOptions?.onObservation) return;
 				try {
 					callOptions.onObservation({
@@ -186,11 +186,11 @@ export function createModelClient(
 			} catch (error) {
 				if (isAbort(error)) {
 					const failure = abortError(callOptions);
-					emitObservation(failure);
+					emitObservation();
 					throw failure;
 				}
 				const failure = new ModelClientError('Agent 模型暂时无法连接', { reason: 'network' });
-				emitObservation(failure);
+				emitObservation();
 				throw failure;
 			}
 			if (!response.ok) {
@@ -198,7 +198,7 @@ export function createModelClient(
 					reason: 'http',
 					status: response.status
 				});
-				emitObservation(failure);
+				emitObservation();
 				throw failure;
 			}
 			let payload: unknown;
@@ -207,16 +207,22 @@ export function createModelClient(
 			} catch (error) {
 				if (isAbort(error)) {
 					const failure = abortError(callOptions);
-					emitObservation(failure);
+					emitObservation();
 					throw failure;
 				}
-				const failure = new ModelClientError('Agent 模型返回了无法解析的数据', { reason: 'payload' });
-				emitObservation(failure);
+				const failure = new ModelClientError('Agent 模型返回了无法解析的数据', {
+					reason: 'payload'
+				});
+				emitObservation();
 				throw failure;
 			}
 			const envelope = payload as {
 				choices?: Array<{ message?: { content?: unknown }; finish_reason?: unknown }>;
-				usage?: { prompt_tokens?: unknown; completion_tokens?: unknown; completion_tokens_details?: { reasoning_tokens?: unknown } };
+				usage?: {
+					prompt_tokens?: unknown;
+					completion_tokens?: unknown;
+					completion_tokens_details?: { reasoning_tokens?: unknown };
+				};
 			};
 			const content = envelope.choices?.[0]?.message?.content;
 			const finishReason =
@@ -228,11 +234,11 @@ export function createModelClient(
 				typeof value === 'number' && Number.isFinite(value) ? value : null;
 			if (typeof content !== 'string' || !content.trim()) {
 				const failure = new ModelClientError('Agent 模型没有返回可用动作', { reason: 'payload' });
-				emitObservation(failure, { finishReason });
+				emitObservation({ finishReason });
 				throw failure;
 			}
 			outputCharacters = content.length;
-			emitObservation(null, {
+			emitObservation({
 				outputCharacters,
 				inputTokens: tokenOrNull(usage.prompt_tokens),
 				outputTokens: tokenOrNull(usage.completion_tokens),
@@ -286,11 +292,14 @@ function createOpenCodeModelClient(
 	return {
 		async complete(messages, callOptions) {
 			const attemptStartedAt = now();
-			const inputCharacters = messages.reduce((total, message) => total + message.content.length, 0);
-			let sessionCreateMs: number | undefined;
-			let sessionCleanupMs: number | undefined;
+			const inputCharacters = messages.reduce(
+				(total, message) => total + message.content.length,
+				0
+			);
+			let sessionCreateMs: number | undefined = undefined;
+			let sessionCleanupMs: number | undefined = undefined;
 			let outputCharacters = 0;
-			const emitObservation = (failure: ModelClientError | null): void => {
+			const emitObservation = (): void => {
 				if (!callOptions?.onObservation) return;
 				try {
 					callOptions.onObservation({
@@ -325,7 +334,7 @@ function createOpenCodeModelClient(
 					error instanceof ModelClientError
 						? error
 						: new ModelClientError('通用 Agent 服务暂时无法连接', { reason: 'network' });
-				emitObservation(failure);
+				emitObservation();
 				throw failure;
 			}
 			sessionCreateMs = Math.round(now() - sessionCreateStartedAt);
@@ -335,16 +344,18 @@ function createOpenCodeModelClient(
 			} catch (error) {
 				if (isAbort(error)) {
 					const failure = abortError(callOptions);
-					emitObservation(failure);
+					emitObservation();
 					throw failure;
 				}
-				const failure = new ModelClientError('通用 Agent 服务返回了无法解析的数据', { reason: 'payload' });
-				emitObservation(failure);
+				const failure = new ModelClientError('通用 Agent 服务返回了无法解析的数据', {
+					reason: 'payload'
+				});
+				emitObservation();
 				throw failure;
 			}
 			if (typeof session.id !== 'string') {
 				const failure = new ModelClientError('通用 Agent 服务未创建会话', { reason: 'payload' });
-				emitObservation(failure);
+				emitObservation();
 				throw failure;
 			}
 
@@ -366,11 +377,11 @@ function createOpenCodeModelClient(
 				})().finally(() => {
 					sessionCleanupMs = Math.round(now() - cleanupStartedAt);
 					// 延迟观测：携带 sessionCleanupMs，供 runtime 合并进既有 attempt 记录。
-					emitObservation(lastFailure);
+					emitObservation();
 				});
 			};
 			let content: string;
-			let lastFailure: ModelClientError | null = null;
+			let lastFailure: ModelClientError;
 			try {
 				const system = messages.find((message) => message.role === 'system')?.content ?? '';
 				const conversation = messages
@@ -419,12 +430,12 @@ function createOpenCodeModelClient(
 						? error
 						: new ModelClientError('通用 Agent 服务返回了无法解析的数据', { reason: 'payload' });
 				outputCharacters = 0;
-				emitObservation(lastFailure);
+				emitObservation();
 				releaseSessionInBackground();
 				throw lastFailure;
 			}
 			outputCharacters = content.length;
-			emitObservation(null);
+			emitObservation();
 			releaseSessionInBackground();
 			return content;
 		}

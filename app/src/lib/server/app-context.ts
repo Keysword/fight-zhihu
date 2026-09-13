@@ -31,6 +31,14 @@ export function nonNegativeIntegerOr(value: string | undefined, fallback: number
 	return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : fallback;
 }
 
+/** 指导启动限流（同步/异步端点共用）；默认每 10 分钟 10 次，可用环境变量覆盖。 */
+export function guidanceRunRateLimit(): { maximum: number; windowMs: number } {
+	return {
+		maximum: Math.max(1, nonNegativeIntegerOr(env.GUIDANCE_RUN_RATE_LIMIT, 10)),
+		windowMs: 10 * 60_000
+	};
+}
+
 function unavailableZhihuClient(): ZhihuClient {
 	return {
 		searchZhihu: async () => {
@@ -62,7 +70,11 @@ export function selectAgentTransport(
 ): AgentTransportSelection {
 	const raw = values.AGENT_TRANSPORT;
 	if (raw === undefined || raw === '' || raw === 'legacy') {
-		return { transport: 'legacy', modelConfiguration: resolveModelConfiguration(values), sdkConfiguration: null };
+		return {
+			transport: 'legacy',
+			modelConfiguration: resolveModelConfiguration(values),
+			sdkConfiguration: null
+		};
 	}
 	if (raw !== 'sdk') {
 		throw new AgentTransportConfigurationError(
@@ -142,8 +154,7 @@ export function getCaseService(): CaseService {
 		guidanceRunner,
 		configuration: {
 			guidanceMode: guidanceModeEnabled(env.BACKGROUND_BOARD_GUIDANCE_V2),
-			modelConfigured:
-				Boolean(selection.modelConfiguration) || Boolean(selection.sdkConfiguration),
+			modelConfigured: Boolean(selection.modelConfiguration) || Boolean(selection.sdkConfiguration),
 			zhihuConfigured: Boolean(env.ZHIHU_ACCESS_SECRET),
 			version: env.APP_VERSION || '0.1.0'
 		}

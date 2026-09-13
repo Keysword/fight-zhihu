@@ -1,4 +1,9 @@
-import OpenAI, { APIConnectionError, APIConnectionTimeoutError, APIError, APIUserAbortError } from 'openai';
+import OpenAI, {
+	APIConnectionError,
+	APIConnectionTimeoutError,
+	APIError,
+	APIUserAbortError
+} from 'openai';
 
 import {
 	ModelClientError,
@@ -72,13 +77,16 @@ export function createSdkModelClient(
 			const signal = callOptions?.signal
 				? AbortSignal.any([callOptions.signal, deadline])
 				: deadline;
-			const inputCharacters = messages.reduce((total, message) => total + message.content.length, 0);
+			const inputCharacters = messages.reduce(
+				(total, message) => total + message.content.length,
+				0
+			);
 			let firstContentMs: number | null = null;
 			let outputCharacters = 0;
 			let finishReason: string | null = null;
 			let usage: ObservedUsage = { inputTokens: null, outputTokens: null, reasoningTokens: null };
 
-			const emitObservation = (failure: ModelClientError | null): void => {
+			const emitObservation = (): void => {
 				if (!callOptions?.onObservation) return;
 				const observation: ModelObservation = {
 					transport: 'sdk',
@@ -128,7 +136,7 @@ export function createSdkModelClient(
 					if (!content.trim()) {
 						throw new ModelClientError('模型流没有返回可用正文', { reason: 'payload' });
 					}
-					emitObservation(null);
+					emitObservation();
 					return content;
 				}
 
@@ -149,11 +157,11 @@ export function createSdkModelClient(
 					throw new ModelClientError('模型没有返回可用正文', { reason: 'payload' });
 				}
 				outputCharacters = content.length;
-				emitObservation(null);
+				emitObservation();
 				return content;
 			} catch (error) {
 				const mapped = mapSdkError(error, callOptions, deadline);
-				emitObservation(mapped);
+				emitObservation();
 				throw mapped;
 			}
 		}

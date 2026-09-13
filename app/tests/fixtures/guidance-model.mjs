@@ -4,7 +4,11 @@ const PORT = 4789;
 // 运行时默认 GUIDANCE_MODEL_MAX_RETRIES=2：耗尽 3 次尝试后才算整轮失败，
 // 手动重试开启新的一轮才会放行。
 const ATTEMPTS_BEFORE_FAILURE_CLEARED = 3;
+// “慢速”标记案例的响应延迟：给“新版替代旧运行”的 E2E 留出竞态窗口。
+const SLOW_RESPONSE_DELAY_MS = 4_000;
 const failureCounts = new Map();
+// “搜索失败”标记案例：每个 revision 第一次先请求搜索，随后再给指导。
+const searchRequested = new Set();
 
 function section(content, heading) {
 	const match = content.match(new RegExp(`【${heading}】[^\\n]*\\n([^\\n]+)`));
@@ -36,6 +40,21 @@ function guidanceAction(prompt) {
 			failureCounts.set(revisionKey, failures + 1);
 			return { status: 503, body: { error: 'scripted first-attempt failure' } };
 		}
+	}
+
+	// “非法来源”标记：引用不存在的来源 id，触发引用修复/降级路径。
+	if (title.includes('非法来源')) {
+		sources.push({ kind: 'evidence', id: 'evidence-not-exist' });
+	}
+
+	if (title.includes('搜索失败') && !searchRequested.has(revisionKey)) {
+		searchRequested.add(revisionKey);
+		const content = JSON.stringify({ type: 'search_zhihu', query: '新人 入住 经验', count: 3 });
+		return {
+			status: 200,
+			body: { choices: [{ message: { content }, finish_reason: 'stop' }] },
+			content
+		};
 	}
 
 	const asksQuestion = title.includes('追问') && inputs.length === 0;
@@ -83,41 +102,63 @@ function guidanceAction(prompt) {
 				]
 			};
 
+	const content = JSON.stringify({
+		type: 'provide_guidance',
+		guidance: {
+			understanding: {
+				summary,
+				openPoint: asksQuestion ? '用户已尝试过的沟通还不清楚。' : null,
+				sources
+			},
+			communicationChecks: sources.length
+				? [
+						{
+							observation: '现有说法只描述了一个沟通入口。',
+							possibleMisreading: '这可能被理解成只有这个人能够推进事情。',
+							whyItMatters: '一旦该入口不可达，用户会误以为事情只能停住。',
+							howToCheck: '查看通知或通讯录里是否还有经办入口。',
+							sources: sources.filter((source) => source.id !== 'evidence-not-exist')
+						}
+					]
+				: [],
+			nextStep,
+			question,
+			changeSummary
+		}
+	});
+
 	return {
 		status: 200,
 		body: {
 			choices: [
 				{
-					message: {
-						content: JSON.stringify({
-							type: 'provide_guidance',
-							guidance: {
-								understanding: {
-									summary,
-									openPoint: asksQuestion ? '用户已尝试过的沟通还不清楚。' : null,
-									sources
-								},
-								communicationChecks: sources.length
-									? [
-											{
-												observation: '现有说法只描述了一个沟通入口。',
-												possibleMisreading: '这可能被理解成只有这个人能够推进事情。',
-												whyItMatters: '一旦该入口不可达，用户会误以为事情只能停住。',
-												howToCheck: '查看通知或通讯录里是否还有经办入口。',
-												sources
-											}
-										]
-									: [],
-								nextStep,
-								question,
-								changeSummary
-							}
-						})
-					}
+					message: { content },
+					finish_reason: 'stop'
 				}
 			]
-		}
+		},
+		content
 	};
+}
+
+function sseChunk(delta, finishReason = null) {
+	return `data: ${JSON.stringify({
+		id: 'chatcmpl-e2e',
+		object: 'chat.completion.chunk',
+		choices: [{ index: 0, delta, finish_reason: finishReason }]
+	})}\n\n`;
+}
+
+/** 以 SSE 形式回放同一脚本：先空 delta，再分段正文，最后 finish_reason=stop。 */
+function writeSse(response, content) {
+	response.writeHead(200, { 'Content-Type': 'text/event-stream' });
+	response.write(sseChunk({ role: 'assistant', content: '' }));
+	const midpoint = Math.max(1, Math.floor(content.length / 2));
+	response.write(sseChunk({ content: content.slice(0, midpoint) }));
+	response.write(sseChunk({ content: content.slice(midpoint) }));
+	response.write(sseChunk({}, 'stop'));
+	response.write('data: [DONE]\n\n');
+	response.end();
 }
 
 const server = createServer((request, response) => {
@@ -140,8 +181,23 @@ const server = createServer((request, response) => {
 				? payload.messages.map((message) => String(message.content ?? '')).join('\n\n')
 				: '';
 			const result = guidanceAction(prompt);
-			response.writeHead(result.status, { 'Content-Type': 'application/json' });
-			response.end(JSON.stringify(result.body));
+			// “慢速”标记：延迟响应，让旧运行还在飞行时就能提交新输入。
+			const delay = prompt.includes('慢速') ? SLOW_RESPONSE_DELAY_MS : 0;
+			const respond = () => {
+				if (payload.stream === true) {
+					if (result.status !== 200) {
+						response.writeHead(result.status, { 'Content-Type': 'application/json' });
+						response.end(JSON.stringify(result.body));
+						return;
+					}
+					writeSse(response, result.content);
+					return;
+				}
+				response.writeHead(result.status, { 'Content-Type': 'application/json' });
+				response.end(JSON.stringify(result.body));
+			};
+			if (delay > 0) setTimeout(respond, delay);
+			else respond();
 		} catch (error) {
 			response.writeHead(400, { 'Content-Type': 'application/json' });
 			response.end(

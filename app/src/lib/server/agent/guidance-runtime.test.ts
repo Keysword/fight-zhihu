@@ -874,7 +874,12 @@ describe('guidance runtime model observations', () => {
 		expect(typeof payload.requestedAt).toBe('number');
 		expect(payload.modelCalls).toHaveLength(2);
 		const [failedAttempt, okAttempt] = payload.modelCalls;
-		expect(failedAttempt).toMatchObject({ ok: false, retryReason: 'http', transport: 'sdk', outputCharacters: 0 });
+		expect(failedAttempt).toMatchObject({
+			ok: false,
+			retryReason: 'http',
+			transport: 'sdk',
+			outputCharacters: 0
+		});
 		expect(okAttempt).toMatchObject({
 			ok: true,
 			transport: 'sdk',
@@ -1068,13 +1073,19 @@ describe('guidance runtime search cache', () => {
 		// 两个独立运行、同一案例：第二次搜索命中缓存，不再发出真实请求。
 		const first = await createGuidanceRuntime({
 			repository: repo,
-			model: scriptedModel([searchAction, provide(draft({ sources: [{ kind: 'external', id: clueItem.id }] }))]),
+			model: scriptedModel([
+				searchAction,
+				provide(draft({ sources: [{ kind: 'external', id: clueItem.id }] }))
+			]),
 			zhihu,
 			searchCache: cache
 		}).run(created.id);
 		const second = await createGuidanceRuntime({
 			repository: repo,
-			model: scriptedModel([searchAction, provide(draft({ sources: [{ kind: 'external', id: clueItem.id }] }))]),
+			model: scriptedModel([
+				searchAction,
+				provide(draft({ sources: [{ kind: 'external', id: clueItem.id }] }))
+			]),
 			zhihu,
 			searchCache: cache
 		}).run(created.id);
@@ -1111,7 +1122,9 @@ describe('guidance runtime search cache', () => {
 		expect(result.outcome).toBe('ready');
 		expect(result.guidance).not.toBeNull();
 		// 失败不缓存：缓存里查不到该 key。
-		expect(cache.get(created.id, { source: 'zhihu', query: '新人住宿', count: 3 }, Date.now())).toBeNull();
+		expect(
+			cache.get(created.id, { source: 'zhihu', query: '新人住宿', count: 3 }, Date.now())
+		).toBeNull();
 	});
 
 	it('keeps cache-registered sources citable in the same run', async () => {
@@ -1119,12 +1132,7 @@ describe('guidance runtime search cache', () => {
 		const created = createCase(repo);
 		const clueItem = clue('zhihu-cache-cite');
 		const cache = createSearchCache();
-		cache.set(
-			created.id,
-			{ source: 'zhihu', query: '新人住宿', count: 3 },
-			[clueItem],
-			Date.now()
-		);
+		cache.set(created.id, { source: 'zhihu', query: '新人住宿', count: 3 }, [clueItem], Date.now());
 		const model = scriptedModel([
 			JSON.stringify({ type: 'search_zhihu', query: '新人住宿', count: 3 }),
 			provide(draft({ sources: [{ kind: 'external', id: clueItem.id }] }))
@@ -1165,7 +1173,10 @@ describe('guidance runtime supersede scheduling', () => {
 							abortedOldCall = true;
 							clearTimeout(timer);
 							// 模拟无视取消：再晚一点才“迟到”返回旧正文。
-							setTimeout(() => resolve(provide(draft({ summary: `第 ${callNumber} 轮的整理结果` }))), 150);
+							setTimeout(
+								() => resolve(provide(draft({ summary: `第 ${callNumber} 轮的整理结果` }))),
+								150
+							);
 						});
 					});
 				}
@@ -1213,7 +1224,10 @@ describe('guidance runtime supersede scheduling', () => {
 				complete: (_messages, options) => {
 					calls += 1;
 					return new Promise<string>((resolve, reject) => {
-						const timer = setTimeout(() => resolve(provide(draft({ summary: `第 ${calls} 轮` }))), 250);
+						const timer = setTimeout(
+							() => resolve(provide(draft({ summary: `第 ${calls} 轮` }))),
+							250
+						);
 						options?.signal?.addEventListener('abort', () => {
 							clearTimeout(timer);
 							reject(new ModelClientError('本轮指导请求已取消', { reason: 'cancelled' }));

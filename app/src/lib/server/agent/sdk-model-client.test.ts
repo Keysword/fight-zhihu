@@ -70,8 +70,10 @@ describe('sdk model client request contract', () => {
 			},
 			{ fetchImpl }
 		);
-		await expect(client.complete([{ role: 'user', content: 'test' }]))
-			.rejects.toMatchObject({ reason: 'http', status: 503 });
+		await expect(client.complete([{ role: 'user', content: 'test' }])).rejects.toMatchObject({
+			reason: 'http',
+			status: 503
+		});
 		expect(fetchImpl).toHaveBeenCalledTimes(1);
 	});
 
@@ -147,8 +149,10 @@ describe('sdk model client request contract', () => {
 				},
 				{ fetchImpl }
 			);
-			await expect(client.complete([{ role: 'user', content: 'x' }]))
-				.rejects.toMatchObject({ reason: 'http', status });
+			await expect(client.complete([{ role: 'user', content: 'x' }])).rejects.toMatchObject({
+				reason: 'http',
+				status
+			});
 			expect(fetchImpl).toHaveBeenCalledTimes(1);
 		}
 	});
@@ -166,15 +170,18 @@ describe('sdk model client request contract', () => {
 			},
 			{ fetchImpl }
 		);
-		await expect(client.complete([{ role: 'user', content: 'x' }]))
-			.rejects.toMatchObject({ reason: 'network' });
+		await expect(client.complete([{ role: 'user', content: 'x' }])).rejects.toMatchObject({
+			reason: 'network'
+		});
 	});
 
 	it('maps a caller cancel to cancelled and a self deadline to timeout', async () => {
 		const hangingFetch = vi.fn<typeof fetch>(
 			(_url, init) =>
 				new Promise<Response>((_resolve, reject) => {
-					init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+					init?.signal?.addEventListener('abort', () =>
+						reject(new DOMException('aborted', 'AbortError'))
+					);
 				})
 		);
 		const client = createSdkModelClient(
@@ -208,7 +215,9 @@ describe('sdk model client request contract', () => {
 							});
 						}
 					});
-					resolve(new Response(stream, { status: 200, headers: { 'content-type': 'application/json' } }));
+					resolve(
+						new Response(stream, { status: 200, headers: { 'content-type': 'application/json' } })
+					);
 				})
 		);
 		const client = createSdkModelClient(
@@ -220,8 +229,9 @@ describe('sdk model client request contract', () => {
 			},
 			{ fetchImpl }
 		);
-		await expect(client.complete([{ role: 'user', content: 'x' }], { timeoutMs: 40 }))
-			.rejects.toMatchObject({ reason: 'timeout' });
+		await expect(
+			client.complete([{ role: 'user', content: 'x' }], { timeoutMs: 40 })
+		).rejects.toMatchObject({ reason: 'timeout' });
 	});
 
 	it('treats empty or blank content as a payload failure', async () => {
@@ -236,15 +246,19 @@ describe('sdk model client request contract', () => {
 				},
 				{ fetchImpl }
 			);
-			await expect(client.complete([{ role: 'user', content: 'x' }]))
-				.rejects.toBeInstanceOf(ModelClientError);
-			await expect(client.complete([{ role: 'user', content: 'x' }]))
-				.rejects.toMatchObject({ reason: 'payload' });
+			await expect(client.complete([{ role: 'user', content: 'x' }])).rejects.toBeInstanceOf(
+				ModelClientError
+			);
+			await expect(client.complete([{ role: 'user', content: 'x' }])).rejects.toMatchObject({
+				reason: 'payload'
+			});
 		}
 	});
 
 	it('does not hand a length-truncated completion to the save phase', async () => {
-		const fetchImpl = vi.fn<typeof fetch>(async () => completionResponse('{"type":"provide_guid', 'length'));
+		const fetchImpl = vi.fn<typeof fetch>(async () =>
+			completionResponse('{"type":"provide_guid', 'length')
+		);
 		const client = createSdkModelClient(
 			{
 				baseURL: 'https://unit.invalid/v1',
@@ -254,22 +268,22 @@ describe('sdk model client request contract', () => {
 			},
 			{ fetchImpl }
 		);
-		await expect(client.complete([{ role: 'user', content: 'x' }]))
-			.rejects.toMatchObject({ reason: 'payload' });
+		await expect(client.complete([{ role: 'user', content: 'x' }])).rejects.toMatchObject({
+			reason: 'payload'
+		});
 	});
 });
 
 describe('sdk model client streaming', () => {
 	it('assembles stream content and records first non-empty content time', async () => {
-		const fetchImpl = vi.fn<typeof fetch>(
-			async () =>
-				sseResponse([
-					chunk({ role: 'assistant', content: '' }),
-					chunk({ content: '第一' }),
-					chunk({ content: '步建议' }),
-					chunk({}, 'stop'),
-					'data: [DONE]\n\n'
-				])
+		const fetchImpl = vi.fn<typeof fetch>(async () =>
+			sseResponse([
+				chunk({ role: 'assistant', content: '' }),
+				chunk({ content: '第一' }),
+				chunk({ content: '步建议' }),
+				chunk({}, 'stop'),
+				'data: [DONE]\n\n'
+			])
 		);
 		const client = createSdkModelClient(
 			{
@@ -285,7 +299,11 @@ describe('sdk model client streaming', () => {
 			onObservation: (observation) => observations.push(observation)
 		});
 		expect(content).toBe('第一步建议');
-		const observation = observations[0] as { firstContentMs: number | null; finishReason: string | null; outputCharacters: number };
+		const observation = observations[0] as {
+			firstContentMs: number | null;
+			finishReason: string | null;
+			outputCharacters: number;
+		};
 		expect(observation.firstContentMs).not.toBeNull();
 		expect(observation.finishReason).toBe('stop');
 		expect(observation.outputCharacters).toBe(5);
@@ -293,14 +311,13 @@ describe('sdk model client streaming', () => {
 
 	it('does not count empty deltas as first content', async () => {
 		let ticks = 0;
-		const fetchImpl = vi.fn<typeof fetch>(
-			async () =>
-				sseResponse([
-					chunk({ role: 'assistant', content: '' }),
-					chunk({ content: '' }),
-					chunk({ content: '正' }),
-					chunk({}, 'stop')
-				])
+		const fetchImpl = vi.fn<typeof fetch>(async () =>
+			sseResponse([
+				chunk({ role: 'assistant', content: '' }),
+				chunk({ content: '' }),
+				chunk({ content: '正' }),
+				chunk({}, 'stop')
+			])
 		);
 		const client = createSdkModelClient(
 			{
@@ -320,12 +337,11 @@ describe('sdk model client streaming', () => {
 	});
 
 	it('fails with a payload error when the stream is interrupted', async () => {
-		const fetchImpl = vi.fn<typeof fetch>(
-			async () =>
-				sseResponse([
-					chunk({ content: '写到一半' })
-					// 没有 finish_reason 也没有 [DONE]，流被截断。
-				])
+		const fetchImpl = vi.fn<typeof fetch>(async () =>
+			sseResponse([
+				chunk({ content: '写到一半' })
+				// 没有 finish_reason 也没有 [DONE]，流被截断。
+			])
 		);
 		const client = createSdkModelClient(
 			{
@@ -336,13 +352,14 @@ describe('sdk model client streaming', () => {
 			},
 			{ fetchImpl }
 		);
-		await expect(client.complete([{ role: 'user', content: 'x' }]))
-			.rejects.toMatchObject({ reason: 'payload' });
+		await expect(client.complete([{ role: 'user', content: 'x' }])).rejects.toMatchObject({
+			reason: 'payload'
+		});
 	});
 
 	it('fails on a length finish reason in a stream', async () => {
-		const fetchImpl = vi.fn<typeof fetch>(
-			async () => sseResponse([chunk({ content: '半' }), chunk({}, 'length'), 'data: [DONE]\n\n'])
+		const fetchImpl = vi.fn<typeof fetch>(async () =>
+			sseResponse([chunk({ content: '半' }), chunk({}, 'length'), 'data: [DONE]\n\n'])
 		);
 		const client = createSdkModelClient(
 			{
@@ -353,8 +370,9 @@ describe('sdk model client streaming', () => {
 			},
 			{ fetchImpl }
 		);
-		await expect(client.complete([{ role: 'user', content: 'x' }]))
-			.rejects.toMatchObject({ reason: 'payload' });
+		await expect(client.complete([{ role: 'user', content: 'x' }])).rejects.toMatchObject({
+			reason: 'payload'
+		});
 	});
 
 	it('records an observation for a failed stream attempt', async () => {
@@ -371,11 +389,17 @@ describe('sdk model client streaming', () => {
 			{ fetchImpl }
 		);
 		const observations: unknown[] = [];
-		await expect(client.complete([{ role: 'user', content: 'hello' }], {
-			onObservation: (observation) => observations.push(observation)
-		})).rejects.toMatchObject({ reason: 'network' });
+		await expect(
+			client.complete([{ role: 'user', content: 'hello' }], {
+				onObservation: (observation) => observations.push(observation)
+			})
+		).rejects.toMatchObject({ reason: 'network' });
 		expect(observations).toHaveLength(1);
-		const observation = observations[0] as { transport: string; durationMs: number; outputCharacters: number };
+		const observation = observations[0] as {
+			transport: string;
+			durationMs: number;
+			outputCharacters: number;
+		};
 		expect(observation.transport).toBe('sdk');
 		expect(observation.durationMs).toBeGreaterThanOrEqual(0);
 		expect(observation.outputCharacters).toBe(0);
