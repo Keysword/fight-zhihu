@@ -38,8 +38,8 @@
 	let newEvidenceKind = $state<EvidenceKind>('message');
 	let sourceLabel = $state('我的补充');
 	let replacementText = $state('');
-	let evidenceConfirmed = $state(false);
-	let evidenceIsOfficial = $state(false);
+	let evidenceConfirmedSignature = $state('');
+	let evidenceOfficialSignature = $state('');
 	let loading = $state(false);
 	let failure = $state('');
 	let failureTitle = $state('');
@@ -55,24 +55,65 @@
 			? `来源：${redactText(sourceLabel, replacements).redacted}\n\n内容：${redactText(newEvidence, replacements).redacted}`
 			: ''
 	);
+	let evidencePreviewSignature = $derived(
+		JSON.stringify({ newEvidence, newEvidenceKind, sourceLabel, replacementText })
+	);
+	let evidenceConfirmed = $derived(
+		Boolean(evidencePreview) && evidenceConfirmedSignature === evidencePreviewSignature
+	);
+	let evidenceIsOfficial = $derived(
+		Boolean(evidencePreview) && evidenceOfficialSignature === evidencePreviewSignature
+	);
+	let activeCaseId = $state('');
+	function isCurrentCase(caseId: string) {
+		return data.view.case.id === caseId;
+	}
 
-	async function runGuidance() {
+	$effect.pre(() => {
+		const nextCaseId = data.view.case.id;
+		if (nextCaseId === activeCaseId) return;
+		activeCaseId = nextCaseId;
+		updatedView = null;
+		shownGuidance = data.view.guidance ?? data.previousGuidance;
+		historyDetails = {};
+		historyLoading = null;
+		historyFailure = '';
+		guidedStatus = '';
+		guidedFailure = '';
+		guidedLoading = false;
+		proposedOverride = undefined;
+		changesOverride = null;
+		newEvidence = '';
+		newEvidenceKind = 'message';
+		sourceLabel = '我的补充';
+		replacementText = '';
+		evidenceConfirmedSignature = '';
+		evidenceOfficialSignature = '';
+		loading = false;
+		failure = '';
+		failureTitle = '';
+		failureSuggestion = '';
+	});
+
+	async function runGuidance(savedInput: '补充' | null = null, caseId = view.case.id) {
 		guidedLoading = true;
 		guidedFailure = '';
 		try {
-			const response = await fetch(`${base}/api/cases/${view.case.id}/guidance`, {
+			const response = await fetch(`${base}/api/cases/${caseId}/guidance`, {
 				method: 'POST'
 			});
 			const payload = await response.json();
+			if (!isCurrentCase(caseId)) return;
 			if (!response.ok || !payload.ok)
 				throw new Error(payload.error?.message ?? '本轮整理没有完成');
 			updatedView = payload.data;
 			if (payload.data.guidance) shownGuidance = payload.data.guidance;
 			if (payload.data.run?.outcome === 'failed') {
-				guidedFailure = '补充已保存，本轮未完成';
+				guidedFailure = savedInput ? `${savedInput}已保存，本轮未完成` : '本轮整理没有完成';
 				guidedStatus = payload.data.run.error?.message ?? '可以稍后只重试整理';
 			} else if (payload.data.run?.outcome === 'superseded') {
-				guidedStatus = '收到更新，正在根据新的补充重新整理。';
+				guidedFailure = '有更新晚于本轮整理';
+				guidedStatus = '这版结果没有成为当前理解，请只重试整理。';
 			} else {
 				guidedStatus =
 					payload.data.run?.outcome === 'needs_input'
@@ -80,33 +121,37 @@
 						: '已根据最新补充重新整理。';
 			}
 		} catch (error) {
-			guidedFailure = '补充已保存，本轮未完成';
+			if (!isCurrentCase(caseId)) return;
+			guidedFailure = savedInput ? `${savedInput}已保存，本轮未完成` : '本轮整理没有完成';
 			guidedStatus = error instanceof Error ? error.message : '可以稍后只重试整理';
 		} finally {
-			guidedLoading = false;
+			if (isCurrentCase(caseId)) guidedLoading = false;
 		}
 	}
 
 	async function saveFeedback(
 		input: CaseInputRequest & { replacements: { from: string; to: string }[] }
 	): Promise<boolean> {
+		const caseId = view.case.id;
 		guidedLoading = true;
 		guidedFailure = '';
 		guidedStatus = '';
 		try {
-			const response = await fetch(`${base}/api/cases/${view.case.id}/inputs`, {
+			const response = await fetch(`${base}/api/cases/${caseId}/inputs`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify(input)
 			});
 			const payload = await response.json();
+			if (!isCurrentCase(caseId)) return false;
 			if (!response.ok || !payload.ok) throw new Error(payload.error?.message ?? '补充没有保存');
 			updatedView = payload.data;
 			guidedStatus = '补充已保存，正在重新整理。';
 			guidedLoading = false;
-			void runGuidance();
+			void runGuidance('补充', caseId);
 			return true;
 		} catch (error) {
+			if (!isCurrentCase(caseId)) return false;
 			guidedFailure = error instanceof Error ? error.message : '补充没有保存';
 			guidedLoading = false;
 			return false;
@@ -115,28 +160,32 @@
 
 	async function loadHistory(guidanceId: string) {
 		if (historyDetails[guidanceId] || historyLoading === guidanceId) return;
+		const caseId = view.case.id;
 		historyLoading = guidanceId;
 		historyFailure = '';
 		try {
-			const response = await fetch(`${base}/api/cases/${view.case.id}/guidance/${guidanceId}`);
+			const response = await fetch(`${base}/api/cases/${caseId}/guidance/${guidanceId}`);
 			const payload = await response.json();
+			if (!isCurrentCase(caseId)) return;
 			if (!response.ok || !payload.ok)
 				throw new Error(payload.error?.message ?? '这版记录暂时无法打开');
 			historyDetails = { ...historyDetails, [guidanceId]: payload.data };
 		} catch (error) {
+			if (!isCurrentCase(caseId)) return;
 			historyFailure = error instanceof Error ? error.message : '这版记录暂时无法打开';
 		} finally {
-			historyLoading = null;
+			if (isCurrentCase(caseId)) historyLoading = null;
 		}
 	}
 
 	async function addGuidedEvidence() {
 		if (!newEvidence.trim() || !evidenceConfirmed) return;
+		const caseId = view.case.id;
 		guidedLoading = true;
 		guidedFailure = '';
 		guidedStatus = '';
 		try {
-			const response = await fetch(`${base}/api/cases/${view.case.id}/evidence`, {
+			const response = await fetch(`${base}/api/cases/${caseId}/evidence`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
@@ -149,26 +198,31 @@
 				})
 			});
 			const payload = await response.json();
+			if (!isCurrentCase(caseId)) return;
 			if (!response.ok || !payload.ok) throw new Error(payload.error?.message ?? '材料没有保存');
 			updatedView = payload.data;
 			newEvidence = '';
 			replacementText = '';
-			evidenceConfirmed = false;
+			evidenceConfirmedSignature = '';
+			evidenceOfficialSignature = '';
 			if (payload.data.guidance) shownGuidance = payload.data.guidance;
 			if (payload.data.run?.outcome === 'failed') {
 				guidedFailure = '材料已保存，本轮未完成';
 				guidedStatus = payload.data.run.error?.message ?? '可以稍后只重试整理';
 			} else if (payload.data.run?.outcome === 'superseded') {
-				guidedStatus = '材料已保存，正在根据新的输入重新整理。';
+				guidedFailure = '材料已保存，但有更新晚于本轮整理';
+				guidedStatus = '这版结果没有成为当前理解，请只重试整理。';
 			} else guidedStatus = '材料已保存，并已更新当前理解。';
 		} catch (error) {
+			if (!isCurrentCase(caseId)) return;
 			guidedFailure = error instanceof Error ? error.message : '材料没有保存';
 		} finally {
-			guidedLoading = false;
+			if (isCurrentCase(caseId)) guidedLoading = false;
 		}
 	}
 
-	async function refreshFrom(endpoint: string, body?: unknown) {
+	async function refreshFrom(endpoint: string, body?: unknown): Promise<boolean> {
+		const caseId = view.case.id;
 		loading = true;
 		failure = '';
 		failureTitle = '';
@@ -180,6 +234,7 @@
 				body: body ? JSON.stringify(body) : undefined
 			});
 			const payload = await response.json();
+			if (!isCurrentCase(caseId)) return false;
 			if (!response.ok || !payload.ok) {
 				failureTitle = payload.error?.title ?? '';
 				failureSuggestion = payload.error?.suggestion ?? '';
@@ -200,46 +255,57 @@
 				failure = payload.data.run.summary;
 				failureTitle = '本轮未完全整理';
 			}
-			if (!nextProposal) clearChangesLater();
+			if (!nextProposal) clearChangesLater(caseId);
+			return true;
 		} catch (error) {
+			if (!isCurrentCase(caseId)) return false;
 			failure = error instanceof Error ? error.message : '本轮判断没有完成';
+			return false;
 		} finally {
-			loading = false;
+			if (isCurrentCase(caseId)) loading = false;
 		}
 	}
 
-	function clearChangesLater() {
-		setTimeout(() => (changesOverride = { blocker: false, claimIds: [], nextAction: false }), 5000);
+	function clearChangesLater(caseId = view.case.id) {
+		setTimeout(() => {
+			if (isCurrentCase(caseId)) {
+				changesOverride = { blocker: false, claimIds: [], nextAction: false };
+			}
+		}, 5000);
 	}
 
 	async function reviewProposal(action: 'confirm' | 'discard') {
 		if (!proposedBoard) return;
+		const caseId = view.case.id;
 		loading = true;
 		failure = '';
 		try {
-			const response = await fetch(`${base}/api/cases/${view.case.id}/proposal`, {
+			const response = await fetch(`${base}/api/cases/${caseId}/proposal`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ action, expectedRevision: view.case.revision })
 			});
 			const payload = await response.json();
+			if (!isCurrentCase(caseId)) return;
 			if (!response.ok || !payload.ok)
 				throw new Error(payload.error?.message ?? '没有完成这次审阅');
 			updatedView = payload.data;
 			proposedOverride = null;
 			if (action === 'discard')
 				changesOverride = { blocker: false, claimIds: [], nextAction: false };
-			else clearChangesLater();
+			else clearChangesLater(caseId);
 		} catch (error) {
+			if (!isCurrentCase(caseId)) return;
 			failure = error instanceof Error ? error.message : '没有完成这次审阅';
 		} finally {
-			loading = false;
+			if (isCurrentCase(caseId)) loading = false;
 		}
 	}
 
 	async function addEvidence() {
 		if (!newEvidence.trim() || !evidenceConfirmed) return;
-		await refreshFrom(`${base}/api/cases/${view.case.id}/evidence`, {
+		const caseId = view.case.id;
+		const saved = await refreshFrom(`${base}/api/cases/${caseId}/evidence`, {
 			kind: newEvidenceKind,
 			content: newEvidence,
 			sourceLabel,
@@ -247,26 +313,29 @@
 			occurredAt: null,
 			confirmation: evidenceIsOfficial ? 'official' : 'self_reported'
 		});
+		if (!saved || !isCurrentCase(caseId)) return;
 		replacementText = '';
-		evidenceConfirmed = false;
-		evidenceIsOfficial = false;
+		evidenceConfirmedSignature = '';
+		evidenceOfficialSignature = '';
 	}
 
 	async function confirmEvidenceItem(evidenceId: string) {
+		const caseId = view.case.id;
 		loading = true;
 		failure = '';
 		try {
-			const response = await fetch(
-				`${base}/api/cases/${view.case.id}/evidence/${evidenceId}/confirm`,
-				{ method: 'POST' }
-			);
+			const response = await fetch(`${base}/api/cases/${caseId}/evidence/${evidenceId}/confirm`, {
+				method: 'POST'
+			});
 			const payload = await response.json();
+			if (!isCurrentCase(caseId)) return;
 			if (!response.ok || !payload.ok) throw new Error(payload.error?.message ?? '确认没有成功');
 			updatedView = payload.data;
 		} catch (error) {
+			if (!isCurrentCase(caseId)) return;
 			failure = error instanceof Error ? error.message : '确认没有成功';
 		} finally {
-			loading = false;
+			if (isCurrentCase(caseId)) loading = false;
 		}
 	}
 
@@ -297,24 +366,27 @@
 				snapshot={shownGuidance}
 				evidence={view.case.evidence}
 				inputs={view.inputs}
+				instanceId={`current-${view.case.id}`}
 				stale={shownGuidance.contextRevision < view.contextRevision}
 			/>
 		{:else}
 			<section class="guided-empty">
 				<h2>先形成一版暂时理解</h2>
-				<p>我会根据现有材料梳理哪里可能失真，并找一个可以尝试的下一步。</p>
-				<button class="button" type="button" disabled={guidedLoading} onclick={runGuidance}>
+				<p>我会根据现有材料梳理哪些环节还值得核对，并找一个可以尝试的下一步。</p>
+				<button class="button" type="button" disabled={guidedLoading} onclick={() => runGuidance()}>
 					{guidedLoading ? '正在整理…' : '开始整理'}
 				</button>
 			</section>
 		{/if}
 
-		<CaseFeedback
-			guidanceId={shownGuidance?.id ?? null}
-			question={shownGuidance?.draft.question ?? null}
-			loading={guidedLoading}
-			onSave={saveFeedback}
-		/>
+		{#key view.case.id}
+			<CaseFeedback
+				guidanceId={shownGuidance?.id ?? null}
+				question={shownGuidance?.draft.question ?? null}
+				loading={guidedLoading}
+				onSave={saveFeedback}
+			/>
+		{/key}
 
 		{#if guidedFailure || guidedStatus}
 			<div
@@ -329,7 +401,7 @@
 						class="text-button"
 						type="button"
 						disabled={guidedLoading}
-						onclick={runGuidance}>只重试整理</button
+						onclick={() => runGuidance()}>只重试整理</button
 					>{/if}
 			</div>
 		{/if}
@@ -365,6 +437,7 @@
 										snapshot={historyDetails[item.id]}
 										evidence={view.case.evidence}
 										inputs={view.inputs}
+										instanceId={`history-${item.id}`}
 										compact
 									/>{/if}
 							</details>
@@ -413,11 +486,13 @@
 					<textarea
 						bind:value={newEvidence}
 						maxlength="30000"
+						aria-label="原材料内容"
 						placeholder="粘贴聊天、邮件、通知或通话记录。"></textarea>
 					<textarea
 						class="replacement-input"
 						bind:value={replacementText}
 						maxlength="2000"
+						aria-label="原材料中的敏感词替换"
 						placeholder="可选：每行填写 原词 => 替换词"></textarea>
 					{#if evidencePreview}
 						<div class="preview-box compact-preview">
@@ -426,7 +501,12 @@
 						<label class="confirmation-line"
 							><input
 								type="checkbox"
-								bind:checked={evidenceConfirmed}
+								checked={evidenceConfirmed}
+								onchange={(event) => {
+									evidenceConfirmedSignature = event.currentTarget.checked
+										? evidencePreviewSignature
+										: '';
+								}}
 							/>我已检查预览，确认可以用于重新整理</label
 						>
 					{/if}
@@ -574,9 +654,25 @@
 					<strong>本次外发预览</strong>\n\n{evidencePreview}
 				</div>
 				<label class="fine-print confirmation-line"
-					><input type="checkbox" bind:checked={evidenceConfirmed} /> 我已检查这条新证据的脱敏预览</label
+					><input
+						type="checkbox"
+						checked={evidenceConfirmed}
+						onchange={(event) => {
+							evidenceConfirmedSignature = event.currentTarget.checked
+								? evidencePreviewSignature
+								: '';
+						}}
+					/> 我已检查这条新证据的脱敏预览</label
 				><label class="fine-print confirmation-line"
-					><input type="checkbox" bind:checked={evidenceIsOfficial} /> 负责方已经明确回复过这个结果（可被当作已确认事实）</label
+					><input
+						type="checkbox"
+						checked={evidenceIsOfficial}
+						onchange={(event) => {
+							evidenceOfficialSignature = event.currentTarget.checked
+								? evidencePreviewSignature
+								: '';
+						}}
+					/> 负责方已经明确回复过这个结果（可被当作已确认事实）</label
 				>{/if}
 			<button
 				class="button"

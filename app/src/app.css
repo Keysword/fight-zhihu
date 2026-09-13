@@ -1017,6 +1017,13 @@ h1,
 	margin-top: 5px;
 	color: var(--blue);
 }
+.external-source-label {
+	display: block;
+	margin-bottom: 4px;
+	color: var(--amber);
+	font-size: 12px;
+	font-weight: 700;
+}
 .case-feedback {
 	margin-top: 36px;
 	padding: 28px 30px;

@@ -3,6 +3,9 @@
 	import { goto } from '$app/navigation';
 	import type { EvidenceKind } from '$lib/domain/types';
 	import { parseRedactionReplacements, redactText } from '$lib/privacy/redact';
+	import type { PageData } from './$types';
+	let { data }: { data: PageData } = $props();
+	let guided = $derived(data.mode === 'guided');
 	let title = $state('');
 	let goal = $state('');
 	let confusion = $state('');
@@ -10,7 +13,7 @@
 	let evidenceKind = $state<EvidenceKind>('message');
 	let sourceLabel = $state('同事 / 通知');
 	let replacementText = $state('');
-	let confirmed = $state(false);
+	let confirmedSignature = $state('');
 	let loading = $state(false);
 	let failure = $state('');
 	const replacementPlaceholder = '每行一项，例如：\n甲公司 => [单位]\n张老师 => 人力老师';
@@ -30,6 +33,10 @@
 			.filter((line) => !line.endsWith('：'))
 			.join('\n\n')
 	);
+	let previewSignature = $derived(
+		JSON.stringify({ title, goal, confusion, evidence, evidenceKind, sourceLabel, replacementText })
+	);
+	let confirmed = $derived(Boolean(preview) && confirmedSignature === previewSignature);
 	async function createCase() {
 		if (!confirmed) return;
 		loading = true;
@@ -67,9 +74,11 @@
 <main>
 	<header class="page-head">
 		<p class="kicker">新建案例</p>
-		<h1>把卡住的事讲清楚一点</h1>
+		<h1>{guided ? '把卡住的事讲清楚一点' : '把卡住的事讲给背景板'}</h1>
 		<p class="goal-line">
-			不必先整理得很完整。说说你想做到什么、哪里想不通，我们先形成一版暂时理解，再找一个可以试的突破点。
+			{guided
+				? '不必先整理得很完整。说说你想做到什么、哪里想不通，我们先形成一版暂时理解，再找一个可以试的突破点。'
+				: '不必先整理得很漂亮。说明你想做到什么、哪里想不通，再贴上一两段原始信息。'}
 		</p>
 	</header>
 	<form
@@ -123,7 +132,8 @@
 			</select>
 		</div>
 		<div class="field">
-			<label for="evidence">先放一段原材料（可选）</label><textarea
+			<label for="evidence">{guided ? '先放一段原材料（可选）' : '先放一条证据（可选）'}</label
+			><textarea
 				id="evidence"
 				bind:value={evidence}
 				maxlength="30000"
@@ -142,12 +152,27 @@
 				<div class="preview-box">{preview}</div>
 			</div>{/if}
 		<label class="fine-print"
-			><input type="checkbox" bind:checked={confirmed} /> 我已检查预览，确认可以用这些内容帮助梳理。</label
+			><input
+				type="checkbox"
+				checked={confirmed}
+				onchange={(event) => {
+					confirmedSignature = event.currentTarget.checked ? previewSignature : '';
+				}}
+			/>
+			我已检查预览，确认可以{guided
+				? '用这些内容帮助梳理。'
+				: '把这些内容交给后台 Agent 分析。'}</label
 		>
 		{#if failure}<div class="error-box" role="alert">{failure}</div>{/if}
 		<div style="margin-top:24px">
 			<button class="button" type="submit" disabled={!confirmed || loading}
-				>{loading ? '正在整理…' : '保存并寻找突破点'}</button
+				>{loading
+					? guided
+						? '正在整理…'
+						: '正在建立背景板…'
+					: guided
+						? '保存并寻找突破点'
+						: '建立背景板并开始判断'}</button
 			>
 		</div>
 	</form>

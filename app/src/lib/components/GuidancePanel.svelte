@@ -6,12 +6,14 @@
 		snapshot,
 		evidence,
 		inputs,
+		instanceId = 'primary',
 		stale = false,
 		compact = false
 	}: {
 		snapshot: GuidanceSnapshot;
 		evidence: Evidence[];
 		inputs: CaseInput[];
+		instanceId?: string;
 		stale?: boolean;
 		compact?: boolean;
 	} = $props();
@@ -22,18 +24,25 @@
 	function source(ref: SourceRef) {
 		if (ref.kind === 'evidence') {
 			const item = evidence.find((candidate) => candidate.id === ref.id);
-			return item ? { label: item.sourceLabel, text: item.content, url: null } : null;
+			return item
+				? { label: item.sourceLabel, text: item.content, url: null, external: false }
+				: null;
 		}
 		if (ref.kind === 'input') {
 			const item = inputs.find((candidate) => candidate.id === ref.id);
-			return item ? { label: '你的补充', text: item.content, url: null } : null;
+			return item ? { label: '你的补充', text: item.content, url: null, external: false } : null;
 		}
 		const item = snapshot.externalClues.find((candidate) => candidate.id === ref.id);
-		return item ? { label: item.title, text: item.excerpt, url: item.url } : null;
+		return item ? { label: item.title, text: item.excerpt, url: item.url, external: true } : null;
 	}
 
 	function sourceItems(refs: SourceRef[]) {
-		return refs.map(source).filter((item): item is NonNullable<typeof item> => item !== null);
+		return refs
+			.map((ref, index) => {
+				const item = source(ref);
+				return item ? { ...item, key: `${ref.kind}:${ref.id}:${index}` } : null;
+			})
+			.filter((item): item is NonNullable<typeof item> => item !== null);
 	}
 
 	async function copyMessage(message: string) {
@@ -50,8 +59,9 @@
 		<details class="guidance-sources">
 			<summary>查看相关材料</summary>
 			<div class="guidance-source-list">
-				{#each items as item (`${item.label}:${item.text}`)}
+				{#each items as item (item.key)}
 					<blockquote>
+						{#if item.external}<small class="external-source-label">外部经验 · 仅供启发</small>{/if}
 						<strong>{item.label}</strong>
 						<p>{item.text}</p>
 						{#if item.url}
@@ -78,9 +88,9 @@
 	</section>
 
 	{#if snapshot.draft.communicationChecks.length}
-		<section class="communication-checks" aria-labelledby={`checks-${snapshot.id}`}>
-			<h2 id={`checks-${snapshot.id}`}>值得核对的沟通疑点</h2>
-			{#each snapshot.draft.communicationChecks as check (check.observation)}
+		<section class="communication-checks" aria-labelledby={`checks-${instanceId}-${snapshot.id}`}>
+			<h2 id={`checks-${instanceId}-${snapshot.id}`}>值得核对的沟通疑点</h2>
+			{#each snapshot.draft.communicationChecks as check, index (`${snapshot.id}:check:${index}`)}
 				<article class="communication-note">
 					<p>{check.observation}</p>
 					<dl>
@@ -130,7 +140,7 @@
 			{/if}
 			{#if step.branches.length}
 				<ul class="guidance-branches">
-					{#each step.branches as branch (branch.when)}<li>
+					{#each step.branches as branch, index (`${snapshot.id}:branch:${index}`)}<li>
 							<strong>{branch.when}</strong>：{branch.then}
 						</li>{/each}
 				</ul>
