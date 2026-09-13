@@ -1,6 +1,6 @@
 # 背景板：帮助与沟通断点识别 Implementation Plan
 
-> 执行状态（2026-09-13）：工程闭环已经完成；当前环境无真实模型配置，20 次真实指导与人工评分仍待执行，因此尚未默认切换或部署。
+> 执行状态（2026-09-13）：工程闭环已经完成并部署为受控个人试用；生产模型完成一组两轮合成烟雾测试，20 次正式指导与人工评分仍待执行，因此尚未完成产品验收。
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. 本计划顺序执行，不要求启动子 Agent。
 
@@ -19,7 +19,7 @@
 - 必须先读：`docs/superpowers/specs/2026-09-11-guided-help-product-design.md`。
 - 检查执行时实际 HEAD 与适用 `AGENTS.md`。有新改动先理解，不覆盖其他人的工作。
 - 旧 `2026-09-11-reliability-follow-up-agent-handoff.md` 中继续构造事实语义判定器的方向，以本设计为准；不再追加词表来证明一句自然语言正确。
-- 本轮产物是可运行的产品闭环。发布与真实模型调用沿用执行会话已有授权；本文不代表已经发布，也不要求为了开发另行购买模型。
+- 本轮产物是可运行的产品闭环。2026-09-13 经用户授权部署为受控个人试用并完成两轮生产模型烟雾测试；这不等于 20 次正式评测或产品验收，也不要求为了后续评测另行购买模型。
 
 ## 1. 文件分工
 
