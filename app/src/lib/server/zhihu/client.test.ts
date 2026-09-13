@@ -100,3 +100,38 @@ describe('Zhihu search client', () => {
 		expect(limitedFetch).toHaveBeenCalledTimes(1);
 	});
 });
+
+describe('Zhihu search client cancellation and timeouts', () => {
+	it('passes the search deadline and caller signal to the request', async () => {
+		const fetchImpl = vi.fn<typeof fetch>(
+			(_url, init) =>
+				new Promise<Response>((resolve, reject) => {
+					init?.signal?.addEventListener('abort', () =>
+						reject(new DOMException('aborted', 'TimeoutError'))
+					);
+				})
+		);
+		const client = createZhihuClient({ accessSecret: 'test-secret', fetchImpl });
+		const caller = new AbortController();
+		await expect(
+			client.searchZhihu('超时验证', 3, { signal: caller.signal, timeoutMs: 60 })
+		).rejects.toMatchObject({ name: 'ZhihuApiError', message: '知乎开放平台请求超时' });
+	}, 2_000);
+
+	it('reports a caller cancellation distinctly from its own timeout', async () => {
+		const fetchImpl = vi.fn<typeof fetch>(
+			(_url, init) =>
+				new Promise<Response>((_resolve, reject) => {
+					init?.signal?.addEventListener('abort', () =>
+						reject(new DOMException('aborted', 'AbortError'))
+					);
+				})
+		);
+		const client = createZhihuClient({ accessSecret: 'test-secret', fetchImpl });
+		const caller = new AbortController();
+		const pending = client.searchZhihu('取消验证', 3, { signal: caller.signal });
+		const assertion = expect(pending).rejects.toMatchObject({ message: '本轮搜索已取消' });
+		caller.abort();
+		await assertion;
+	});
+});

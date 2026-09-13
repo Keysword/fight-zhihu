@@ -8,6 +8,7 @@ import type { ExternalClue } from '$lib/domain/types';
 import { createCaseRepository, type CaseRepository } from '$lib/server/cases/repository';
 import { ModelClientError, type ModelClient, type ModelMessage } from './model-client';
 import { createGuidanceRuntime } from './guidance-runtime';
+import { createSearchCache } from './search-cache';
 
 function timeoutError(): ModelClientError {
 	return new ModelClientError('Agent 模型响应超时', { reason: 'timeout' });
@@ -1052,5 +1053,92 @@ describe('guidance runtime fast policy', () => {
 		expect(calls).toBe(1);
 		expect(result.outcome).toBe('ready');
 		expect(result.guidance?.completeness).toBe('minimal');
+	});
+});
+
+describe('guidance runtime search cache', () => {
+	it('reuses cached clues within the same case and separates cache hits from requests', async () => {
+		const repo = repository();
+		const created = createCase(repo);
+		const clueItem = clue('zhihu-cache-1');
+		const zhihu = zhihuClient([clueItem]);
+		const cache = createSearchCache();
+		const searchAction = JSON.stringify({ type: 'search_zhihu', query: '新人住宿 经验', count: 3 });
+		// 两个独立运行、同一案例：第二次搜索命中缓存，不再发出真实请求。
+		const first = await createGuidanceRuntime({
+			repository: repo,
+			model: scriptedModel([searchAction, provide(draft({ sources: [{ kind: 'external', id: clueItem.id }] }))]),
+			zhihu,
+			searchCache: cache
+		}).run(created.id);
+		const second = await createGuidanceRuntime({
+			repository: repo,
+			model: scriptedModel([searchAction, provide(draft({ sources: [{ kind: 'external', id: clueItem.id }] }))]),
+			zhihu,
+			searchCache: cache
+		}).run(created.id);
+
+		expect(first.outcome).toBe('ready');
+		expect(second.outcome).toBe('ready');
+		expect(zhihu.searchZhihu).toHaveBeenCalledTimes(1);
+		const secondFinished = finishedEvents(repo, created.id).at(-1)?.payload as {
+			searches: Array<{ cacheHit?: boolean }>;
+		};
+		expect(secondFinished.searches[0].cacheHit).toBe(true);
+	});
+
+	it('does not cache unavailable searches and still saves guidance afterwards', async () => {
+		const repo = repository();
+		const created = createCase(repo);
+		const failingZhihu = {
+			searchZhihu: vi.fn(async () => {
+				throw new Error('timeout');
+			}),
+			searchGlobal: vi.fn(async () => [])
+		};
+		const model = scriptedModel([
+			JSON.stringify({ type: 'search_zhihu', query: '新人住宿', count: 3 }),
+			provide(draft({ sources: [] }))
+		]);
+		const cache = createSearchCache();
+		const result = await createGuidanceRuntime({
+			repository: repo,
+			model,
+			zhihu: failingZhihu,
+			searchCache: cache
+		}).run(created.id);
+		expect(result.outcome).toBe('ready');
+		expect(result.guidance).not.toBeNull();
+		// 失败不缓存：缓存里查不到该 key。
+		expect(cache.get(created.id, { source: 'zhihu', query: '新人住宿', count: 3 }, Date.now())).toBeNull();
+	});
+
+	it('keeps cache-registered sources citable in the same run', async () => {
+		const repo = repository();
+		const created = createCase(repo);
+		const clueItem = clue('zhihu-cache-cite');
+		const cache = createSearchCache();
+		cache.set(
+			created.id,
+			{ source: 'zhihu', query: '新人住宿', count: 3 },
+			[clueItem],
+			Date.now()
+		);
+		const model = scriptedModel([
+			JSON.stringify({ type: 'search_zhihu', query: '新人住宿', count: 3 }),
+			provide(draft({ sources: [{ kind: 'external', id: clueItem.id }] }))
+		]);
+		const result = await createGuidanceRuntime({
+			repository: repo,
+			model,
+			zhihu: zhihuClient([]),
+			searchCache: cache
+		}).run(created.id);
+		// 缓存命中后在 gatheredClues 注册同一来源，引用校验通过，无需真实请求。
+		expect(result.outcome).toBe('ready');
+		expect(result.guidance?.draft.understanding.sources[0]).toEqual({
+			kind: 'external',
+			id: clueItem.id
+		});
 	});
 });

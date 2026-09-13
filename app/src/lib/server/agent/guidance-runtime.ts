@@ -10,11 +10,12 @@ import type {
 import type { ExternalClue } from '$lib/domain/types';
 import { redactSearchQuery } from '$lib/privacy/redact';
 import type { CaseRepository } from '$lib/server/cases/repository';
-import type { ZhihuClient } from '$lib/server/zhihu/client';
+import type { SearchCallOptions, ZhihuClient } from '$lib/server/zhihu/client';
 import { buildGuidanceMessages, type GuidancePromptPriorGuidance } from './guidance-prompt';
 import { parseGuidanceActionEnvelope, type GuidanceActionEnvelope } from './guidance-protocol';
 import { canRetryFast, fastBackoffDelayMs } from './guidance-policy';
 import { salvageGuidance } from './guidance-salvage';
+import type { SearchCache } from './search-cache';
 import {
 	DEFAULT_MODEL_TIMEOUT_MS,
 	ModelClientError,
@@ -64,6 +65,8 @@ export interface GuidanceSearchRecord {
 	durationMs: number;
 	outcome: 'ok' | 'unavailable' | 'limit';
 	resultCount: number;
+	/** 命中单案例缓存时为 true；实际请求数与逻辑搜索数据此区分。 */
+	cacheHit?: boolean;
 }
 
 export type GuidancePhase = 'thinking' | 'searching' | 'repairing' | 'saving';
@@ -118,6 +121,8 @@ export interface GuidanceRuntimeDependencies {
 	maxModelSteps?: number;
 	/** 策略模式：legacy 保留原重试契约；fast 使用固定退避与严格重试判定。 */
 	policyMode?: 'legacy' | 'fast';
+	/** 单案例内有界短期搜索缓存；评测对照时禁用。 */
+	searchCache?: SearchCache;
 	sleep?: (durationMs: number) => Promise<void>;
 	random?: () => number;
 }
@@ -225,6 +230,7 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 	const searchTimeoutMs = dependencies.searchTimeoutMs ?? DEFAULT_SEARCH_TIMEOUT_MS;
 	const maxModelSteps = dependencies.maxModelSteps ?? MAX_MODEL_CALLS;
 	const policyMode = dependencies.policyMode ?? 'legacy';
+	const searchCache = dependencies.searchCache ?? null;
 	const sleep =
 		dependencies.sleep ??
 		((durationMs: number) => new Promise<void>((resolve) => setTimeout(resolve, durationMs)));
@@ -658,11 +664,43 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 					searchCount += 1;
 					const searchStartedAt = now();
 					const query = redactSearchQuery(action.query, sourceLabels);
+					// 缓存 key 使用脱敏后的检索词与来源/条数；按案例隔离。
+					const cacheKey = {
+						source: action.type === 'search_zhihu' ? ('zhihu' as const) : ('global' as const),
+						query,
+						count: Math.max(1, Math.trunc(action.count))
+					};
+					const searchOptions: SearchCallOptions = {
+						// 整轮取消立即停止；搜索自身超时按不可用继续本轮。
+						signal: deadlineController.signal,
+						timeoutMs: searchTimeoutMs
+					};
+					const cachedClues = searchCache?.get(caseId, cacheKey, Date.now()) ?? null;
+					if (cachedClues) {
+						const canonicalClues: ExternalClue[] = [];
+						for (const item of cachedClues) {
+							if (gatheredClues.has(item.id)) continue;
+							gatheredClues.set(item.id, item);
+							canonicalClues.push(item);
+						}
+						searches.push({
+							index: searches.length + 1,
+							type: action.type,
+							durationMs: Math.round(now() - searchStartedAt),
+							outcome: 'ok',
+							resultCount: canonicalClues.length,
+							cacheHit: true
+						});
+						messages.push(toolMessage({ code: 'SEARCH_RESULTS', clues: canonicalClues }));
+						continue;
+					}
 					try {
 						const clues =
 							action.type === 'search_zhihu'
-								? await zhihu.searchZhihu(query, action.count)
-								: await zhihu.searchGlobal(query, action.count);
+								? await zhihu.searchZhihu(query, action.count, searchOptions)
+								: await zhihu.searchGlobal(query, action.count, searchOptions);
+						// 只有成功结果进入缓存；失败/超时不缓存，本轮内仍然可用。
+						searchCache?.set(caseId, cacheKey, clues, Date.now());
 						const canonicalClues: ExternalClue[] = [];
 						for (const item of clues) {
 							if (gatheredClues.has(item.id)) continue;
@@ -674,7 +712,8 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 							type: action.type,
 							durationMs: Math.round(now() - searchStartedAt),
 							outcome: 'ok',
-							resultCount: canonicalClues.length
+							resultCount: canonicalClues.length,
+							cacheHit: false
 						});
 						messages.push(toolMessage({ code: 'SEARCH_RESULTS', clues: canonicalClues }));
 					} catch {
