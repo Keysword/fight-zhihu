@@ -656,19 +656,41 @@ describe('case service', () => {
 	});
 
 	it('round-trips legacy boards and guided records through the same database', async () => {
-		const { repository, legacyRunner, guidanceRunner, service: legacyService } = setup('legacy');
-		const legacyDemo = await legacyService.createDemo();
-		const caseId = legacyDemo.case.id;
-		const legacyBoard = legacyDemo.case.board;
-		expect(legacyBoard).not.toBeNull();
-		if (!legacyBoard) throw new Error('legacy demo did not create a board');
-		repository.stageBoardProposal(caseId, legacyDemo.case.revision, {
-			...legacyBoard,
-			currentBlocker: '旧模式中尚待确认的更新'
-		});
-
-		const serviceWithMode = (guidanceMode: boolean) =>
-			createCaseService({
+		const directory = mkdtempSync(join(tmpdir(), 'background-service-'));
+		directories.push(directory);
+		const databasePath = join(directory, 'mode-switch.sqlite');
+		const openService = (guidanceMode: boolean) => {
+			const repository = createCaseRepository(databasePath);
+			const legacyRunner = {
+				run: vi.fn(async () => ({
+					outcome: 'finished' as const,
+					summary: '完成',
+					turns: 1,
+					revision: 0
+				}))
+			};
+			const guidanceRunner = {
+				run: vi.fn(async (caseId: string): Promise<GuidanceRunResult> => {
+					const contextRevision = repository.getCaseContext(caseId).contextRevision;
+					const saved = repository.saveGuidance(
+						caseId,
+						contextRevision,
+						guidanceDraft(),
+						[],
+						crypto.randomUUID()
+					);
+					return {
+						runId: saved.snapshot.runId,
+						outcome: 'ready',
+						guidance: saved.snapshot,
+						contextRevision,
+						modelCallCount: 1,
+						searchCount: 0,
+						repairCount: 0
+					};
+				})
+			};
+			const service = createCaseService({
 				repository,
 				runner: legacyRunner,
 				guidanceRunner,
@@ -679,8 +701,23 @@ describe('case service', () => {
 					version: 'test'
 				}
 			});
-		const guidedService = serviceWithMode(true);
-		const beforeGuidance = guidedService.getCase(caseId);
+			return { repository, service };
+		};
+
+		const firstLegacyProcess = openService(false);
+		const legacyDemo = await firstLegacyProcess.service.createDemo();
+		const caseId = legacyDemo.case.id;
+		const legacyBoard = legacyDemo.case.board;
+		expect(legacyBoard).not.toBeNull();
+		if (!legacyBoard) throw new Error('legacy demo did not create a board');
+		firstLegacyProcess.repository.stageBoardProposal(caseId, legacyDemo.case.revision, {
+			...legacyBoard,
+			currentBlocker: '旧模式中尚待确认的更新'
+		});
+		firstLegacyProcess.repository.close();
+
+		const guidedProcess = openService(true);
+		const beforeGuidance = guidedProcess.service.getCase(caseId);
 		expect(beforeGuidance).toMatchObject({
 			mode: 'guided',
 			case: {
@@ -688,16 +725,17 @@ describe('case service', () => {
 				pendingBoard: { currentBlocker: '旧模式中尚待确认的更新' }
 			}
 		});
-
-		guidedService.appendCaseInput(caseId, {
+		guidedProcess.service.appendCaseInput(caseId, {
 			kind: 'correction',
 			content: '这条纠正需要跨模式保留',
 			guidanceId: null,
 			requestId: crypto.randomUUID()
 		});
-		await guidedService.runGuidance(caseId);
+		await guidedProcess.service.runGuidance(caseId);
+		guidedProcess.repository.close();
 
-		const legacyAgain = serviceWithMode(false).getCase(caseId);
+		const secondLegacyProcess = openService(false);
+		const legacyAgain = secondLegacyProcess.service.getCase(caseId);
 		expect(legacyAgain).toMatchObject({
 			mode: 'legacy',
 			case: {
@@ -708,6 +746,6 @@ describe('case service', () => {
 			guidance: { draft: { understanding: { summary: '先核实负责方，再决定行动' } } }
 		});
 		expect(legacyAgain.guidanceHistory).toHaveLength(1);
-		repository.close();
+		secondLegacyProcess.repository.close();
 	});
 });
