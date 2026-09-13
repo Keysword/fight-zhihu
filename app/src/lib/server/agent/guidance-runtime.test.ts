@@ -911,3 +911,146 @@ describe('guidance runtime model observations', () => {
 		expect(payload.totalMs).toBeGreaterThanOrEqual(payload.queueMs);
 	});
 });
+
+describe('guidance runtime fast policy', () => {
+	it('retries a fast 503 once with the fixed backoff and then succeeds', async () => {
+		const repo = repository();
+		const created = createCase(repo);
+		let calls = 0;
+		const sleeps: number[] = [];
+		const model: ModelClient = {
+			async complete() {
+				calls += 1;
+				if (calls === 1) {
+					throw new ModelClientError('Agent 模型请求失败（HTTP 503）', {
+						reason: 'http',
+						status: 503
+					});
+				}
+				return provide(draft({ sources: [] }));
+			}
+		};
+		const result = await createGuidanceRuntime({
+			repository: repo,
+			model,
+			zhihu: zhihuClient(),
+			policyMode: 'fast',
+			maxModelRetries: 1,
+			runBudgetMs: 60_000,
+			sleep: async (durationMs) => {
+				sleeps.push(durationMs);
+			}
+		}).run(created.id);
+		expect(result.outcome).toBe('ready');
+		expect(calls).toBe(2);
+		expect(sleeps).toEqual([200]);
+	});
+
+	it('does not retry a timeout or a cancellation in fast mode', async () => {
+		for (const failure of [timeoutError(), new ModelClientError('取消', { reason: 'cancelled' })]) {
+			const repo = repository();
+			const created = createCase(repo);
+			let calls = 0;
+			const model: ModelClient = {
+				async complete() {
+					calls += 1;
+					throw failure;
+				}
+			};
+			const result = await createGuidanceRuntime({
+				repository: repo,
+				model,
+				zhihu: zhihuClient(),
+				policyMode: 'fast',
+				maxModelRetries: 1
+			}).run(created.id);
+			expect(result.outcome).toBe('failed');
+			expect(calls).toBe(1);
+		}
+	});
+
+	it('reports budget exhaustion when the deadline aborts a hanging model call', async () => {
+		const repo = repository();
+		const created = createCase(repo);
+		const model: ModelClient = {
+			// 模型永不返回；整轮截止信号触发后按取消结束。
+			complete(_messages, options) {
+				return new Promise<string>((_resolve, reject) => {
+					options?.signal?.addEventListener('abort', () => {
+						reject(new ModelClientError('本轮指导请求已取消', { reason: 'cancelled' }));
+					});
+				});
+			}
+		};
+		const result = await createGuidanceRuntime({
+			repository: repo,
+			model,
+			zhihu: zhihuClient(),
+			policyMode: 'fast',
+			runBudgetMs: 80
+		}).run(created.id);
+		expect(result.outcome).toBe('failed');
+		expect(result.error?.code).toBe('TIME_BUDGET_EXCEEDED');
+	});
+
+	it('never writes a late model result that resolves after the deadline', async () => {
+		const repo = repository();
+		const created = createCase(repo);
+		const model: ModelClient = {
+			// 模型无视取消信号，在截止后约 200ms 才迟到返回正文；runtime 必须丢弃。
+			complete() {
+				return new Promise<string>((resolve) => {
+					setTimeout(() => resolve(provide(draft({ sources: [] }))), 280);
+				});
+			}
+		};
+		const result = await createGuidanceRuntime({
+			repository: repo,
+			model,
+			zhihu: zhihuClient(),
+			policyMode: 'fast',
+			runBudgetMs: 80
+		}).run(created.id);
+		expect(result.outcome).toBe('failed');
+		// 迟到的正文到达前运行已经结束；不得保存任何指导。
+		await new Promise((resolvePromise) => setTimeout(resolvePromise, 700));
+		expect(repo.getCurrentGuidance(created.id)).toBeNull();
+	});
+
+	it('prefers salvage over another repair round trip when little time remains', async () => {
+		const repo = repository();
+		const created = createCase(repo);
+		// 疑点块不合规范但理解部分可抢救；剩余预算不足时不再多花一次模型调用。
+		const malformed = JSON.stringify({
+			type: 'provide_guidance',
+			guidance: {
+				understanding: { summary: '只保留了理解。', openPoint: null, sources: [] },
+				communicationChecks: [{ bad: 'schema' }],
+				nextStep: null,
+				question: null,
+				changeSummary: null
+			}
+		});
+		let calls = 0;
+		const model: ModelClient = {
+			async complete() {
+				calls += 1;
+				// 第一次回复在约 950ms 到达（预算 1s）：剩余不足 10s，不再修复，直接 salvage。
+				await new Promise((resolveWait) => setTimeout(resolveWait, 950));
+				return malformed;
+			}
+		};
+		const result = await createGuidanceRuntime({
+			repository: repo,
+			model,
+			zhihu: zhihuClient(),
+			policyMode: 'fast',
+			maxModelRetries: 1,
+			runBudgetMs: 1_000
+		}).run(created.id);
+		// 第一次调用耗尽到接近预算尽头，剩余不足 10s：不再修复，直接 salvage 保存理解。
+		expect(calls).toBe(1);
+		expect(result.outcome).toBe('ready');
+		expect(result.guidance?.completeness).toBe('minimal');
+	});
+});

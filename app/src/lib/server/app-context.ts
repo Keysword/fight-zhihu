@@ -2,18 +2,14 @@ import { resolve } from 'node:path';
 import { env } from '$env/dynamic/private';
 
 import { createAgentRuntime } from '$lib/server/agent/runtime';
-import {
-	createGuidanceRuntime,
-	DEFAULT_MAX_MODEL_RETRIES,
-	DEFAULT_RUN_BUDGET_MS
-} from '$lib/server/agent/guidance-runtime';
+import { createGuidanceRuntime } from '$lib/server/agent/guidance-runtime';
 import {
 	createModelClient,
 	resolveModelConfiguration,
-	resolveModelTimeoutMs,
 	type ModelClient,
 	type ModelConfiguration
 } from '$lib/server/agent/model-client';
+import { resolveGuidancePolicy } from '$lib/server/agent/guidance-policy';
 import { createSdkModelClient, type SdkConfiguration } from '$lib/server/agent/sdk-model-client';
 import { createCaseRepository } from '$lib/server/cases/repository';
 import { createCaseService, type CaseService } from '$lib/server/services/case-service';
@@ -121,8 +117,9 @@ export function getCaseService(): CaseService {
 	const dataDirectory = env.BACKGROUND_BOARD_DATA_DIR || resolve(process.cwd(), 'data');
 	const repository = createCaseRepository(resolve(dataDirectory, 'background-board.sqlite'));
 	const selection = selectAgentTransport(env);
-	const modelTimeoutMs = resolveModelTimeoutMs(env);
-	const model = createAgentModelClient(selection, modelTimeoutMs);
+	// 策略解析是超时/预算的唯一来源；sdk 传输下数值覆盖也必须合法，禁止静默回退到更慢路由。
+	const policy = resolveGuidancePolicy(env, { strictNumeric: selection.transport === 'sdk' });
+	const model = createAgentModelClient(selection, policy.modelTimeoutMs);
 	const zhihu = env.ZHIHU_ACCESS_SECRET
 		? createZhihuClient({ accessSecret: env.ZHIHU_ACCESS_SECRET })
 		: unavailableZhihuClient();
@@ -131,9 +128,13 @@ export function getCaseService(): CaseService {
 		repository,
 		model,
 		zhihu,
-		modelTimeoutMs,
-		runBudgetMs: positiveIntegerOr(env.GUIDANCE_RUN_BUDGET_MS, DEFAULT_RUN_BUDGET_MS),
-		maxModelRetries: nonNegativeIntegerOr(env.GUIDANCE_MODEL_MAX_RETRIES, DEFAULT_MAX_MODEL_RETRIES)
+		modelTimeoutMs: policy.modelTimeoutMs,
+		runBudgetMs: policy.runBudgetMs,
+		maxModelRetries: policy.maxModelRetries,
+		maxSearches: policy.maxSearches,
+		searchTimeoutMs: policy.searchTimeoutMs,
+		maxModelSteps: policy.maxModelSteps,
+		policyMode: policy.mode
 	});
 	service = createCaseService({
 		repository,

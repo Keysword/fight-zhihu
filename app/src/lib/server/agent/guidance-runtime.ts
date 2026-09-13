@@ -13,6 +13,7 @@ import type { CaseRepository } from '$lib/server/cases/repository';
 import type { ZhihuClient } from '$lib/server/zhihu/client';
 import { buildGuidanceMessages, type GuidancePromptPriorGuidance } from './guidance-prompt';
 import { parseGuidanceActionEnvelope, type GuidanceActionEnvelope } from './guidance-protocol';
+import { canRetryFast, fastBackoffDelayMs } from './guidance-policy';
 import { salvageGuidance } from './guidance-salvage';
 import {
 	DEFAULT_MODEL_TIMEOUT_MS,
@@ -115,6 +116,8 @@ export interface GuidanceRuntimeDependencies {
 	searchTimeoutMs?: number;
 	/** 逻辑决策步数上限；真实请求数另计。 */
 	maxModelSteps?: number;
+	/** 策略模式：legacy 保留原重试契约；fast 使用固定退避与严格重试判定。 */
+	policyMode?: 'legacy' | 'fast';
 	sleep?: (durationMs: number) => Promise<void>;
 	random?: () => number;
 }
@@ -221,6 +224,7 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 	const maxSearches = dependencies.maxSearches ?? MAX_SEARCHES;
 	const searchTimeoutMs = dependencies.searchTimeoutMs ?? DEFAULT_SEARCH_TIMEOUT_MS;
 	const maxModelSteps = dependencies.maxModelSteps ?? MAX_MODEL_CALLS;
+	const policyMode = dependencies.policyMode ?? 'legacy';
 	const sleep =
 		dependencies.sleep ??
 		((durationMs: number) => new Promise<void>((resolve) => setTimeout(resolve, durationMs)));
@@ -258,6 +262,13 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 		const startedAt = now();
 		// 排队时间单独记录：调度请求时刻与 execute 实际开始时刻之差。
 		const queueMs = Math.max(0, Math.round(startedAt - requestedAt));
+		// 整轮截止：一个 AbortController 同时覆盖模型、搜索与退避；
+		// 预算从 execute 开始计算，排队另计并受调度任务约束。
+		const deadlineController = new AbortController();
+		const deadlineTimer = setTimeout(
+			() => deadlineController.abort(new DOMException('整轮时间预算用尽', 'TimeoutError')),
+			runBudgetMs
+		);
 		const modelCalls: GuidanceModelCallRecord[] = [];
 		const searches: GuidanceSearchRecord[] = [];
 		// One reasoning step can span several transport attempts; the budget counts steps.
@@ -481,6 +492,8 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 					try {
 						rawAction = await model.complete(messages, {
 							timeoutMs: Math.min(modelTimeoutMs, remainingMs),
+							// 整轮截止信号：预算用尽后，迟到的结果不能再影响本轮。
+							signal: deadlineController.signal,
 							onObservation: (observed) => {
 								observation = observed;
 							}
@@ -501,7 +514,6 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 						// error stays terminal rather than being guessed at here.
 						const classified = error instanceof ModelClientError ? error : null;
 						const reason: ModelFailureReason = classified?.reason ?? 'payload';
-						const retryable = classified?.retryable ?? false;
 						lastReason = reason;
 						modelCalls.push({
 							index: callIndex,
@@ -513,14 +525,32 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 							retryReason: reason,
 							...(observation ? observationFields(observation) : {})
 						});
-						if (!retryable || attempt > maxModelRetries) break;
-						const delayMs = backoffDelayMs(attempt);
+						const retriesUsed = attempt - 1;
+						const attemptMs = Math.round(now() - attemptStartedAt);
+						// legacy 保留原重试契约（分类可重试即重试）；fast 只对快速 network/5xx 补一次。
+						const shouldRetry =
+							policyMode === 'fast'
+								? canRetryFast(error, attemptMs, remainingMs, retriesUsed, maxModelRetries)
+								: Boolean(classified?.retryable) && retriesUsed < maxModelRetries;
+						if (!shouldRetry) break;
+						const delayMs =
+							policyMode === 'fast'
+								? fastBackoffDelayMs(runBudgetMs - (now() - startedAt))
+								: backoffDelayMs(attempt);
+						if (delayMs === null) break;
 						if (now() - startedAt + delayMs >= runBudgetMs) break;
 						await sleep(delayMs);
 					}
 				}
 
+				// 整轮截止后（含模型无视取消信号而迟到返回的正文）一律丢弃。
+				if (deadlineController.signal.aborted) rawAction = undefined;
+
 				if (rawAction === undefined) {
+					const budgetExhausted =
+						!attempted ||
+						deadlineController.signal.aborted ||
+						(lastReason === 'timeout' && now() - startedAt >= runBudgetMs);
 					return finish(
 						failure(
 							runId,
@@ -528,11 +558,7 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 							stepCount(),
 							searchCount,
 							repairTotal(),
-							// 一次尝试都没发出，或最后一次因超时告败且预算已尽，都属于时间用尽，
-							// 不应报成模型自身失败。
-							!attempted || (lastReason === 'timeout' && now() - startedAt >= runBudgetMs)
-								? 'TIME_BUDGET_EXCEEDED'
-								: 'MODEL_CALL_FAILED',
+							budgetExhausted ? 'TIME_BUDGET_EXCEEDED' : 'MODEL_CALL_FAILED',
 							'指导模型暂时无法完成本轮请求'
 						)
 					);
@@ -570,7 +596,12 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 					messages.push({ role: 'assistant', content: rawAction });
 					// One strict-schema repair is still offered before falling back to salvage, so a
 					// model that can simply restate a compliant reply is given that chance first.
-					if (repairs.schema < 1) {
+					// fast 模式下剩余时间不足以再发起一次模型请求时，优先 salvage 可用草稿。
+					const remainingForRepairMs = runBudgetMs - (now() - startedAt);
+					const repairAffordable =
+						repairs.schema < 1 &&
+						!(policyMode === 'fast' && remainingForRepairMs < 10_000);
+					if (repairAffordable) {
 						recordStep('repairing', '正在重新整理');
 						repairs.schema += 1;
 						messages.push(
@@ -732,6 +763,9 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 					error instanceof Error ? error.message : '指导运行遇到未知错误'
 				)
 			);
+		} finally {
+			// 预算截止定时器只在 finally 清除；迟到的模型结果不会再被任何分支消费。
+			clearTimeout(deadlineTimer);
 		}
 	}
 
