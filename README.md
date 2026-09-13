@@ -1,19 +1,31 @@
 # 背景板
 
-背景板是一款面向职场新人的移动端优先 PWA。用户把一件卡住的事和零散材料放进来，后台的通用 Agent 会自主判断是整理背景、搜索外部线索、追问，还是结束本轮，并把结果写成一张有证据链的背景板：当前阻塞、事实/说法/推断/未知/冲突、关键补全者，以及一条可以直接参考的求助信息。
+背景板是一款面向职场新人的移动端优先 PWA。用户把一件卡住的事、零散材料和现实限制放进来，应用先形成一版可以纠正的工作理解，再帮助用户发现可能改变行动的沟通断点，并给出一个值得尝试的下一步。
 
-线上体验：[projects.wangjian7410.cc/background-board/](https://projects.wangjian7410.cc/background-board/)
+这轮改造的重点是“帮助、启发、引导”。模型不负责给人或说法做最终裁决，程序也不再用自然语言规则认证模型概括是否绝对正确。用户可以补充新情况、指出理解有误、说明联系不上或反馈已经问过；提示要求下一版据此调整，实际适应效果纳入真实模型评测。
 
-推荐先点击“体验宿舍案例”。预置材料会形成一张等待确认的背景板；再加入“物业刚回复：房间已经分配，钥匙在前台领取。”，即可先审阅阻塞点、结论、关键补全者和下一步的高亮变化，确认后再生成正式修订。
+仓库仍保留旧背景板及其数据结构。新引导模式通过服务端开关整体启用，目前需要完成真实模型产品评测后再决定是否默认切换。本轮代码尚未部署到线上地址：[projects.wangjian7410.cc/background-board/](https://projects.wangjian7410.cc/background-board/)。
+
+## 一次完整使用
+
+1. 输入目标、困惑和已有的聊天、邮件或通知，并检查脱敏预览。
+2. 查看“当前理解”。它是一版工作假设，可以纠正，不是程序认证的事实。
+3. 模型认为本案例材料提示沟通断点时，查看至多两个“值得核对的沟通疑点”。每项都要引用相关材料，仍可由用户纠正；模型没有提出疑点时这一栏不显示。
+4. 尝试一个下一步。建议可以是联系、查看材料、等待或先回答一个关键问题。
+5. 用“理解有误”“联系不上”“我问过了”“有新回复”补充现实反馈。输入先持久保存，再触发下一轮整理。
+6. 刷新后继续查看反馈、当前指导和历史版本；失败不会吞掉已经保存的输入。
+
+没有模型配置时，匿名宿舍演示使用明确标注的固定样例。普通案例会保留材料与反馈，并如实提示本轮未完成。
 
 ## 产品原则
 
-- 一件事一张持续更新的板，不把状态只留在聊天上下文里。
-- Agent 没有固定工作流；它在最多 6 个决策回合内自由选择受控工具，每轮最多搜索 2 次。
-- 事实必须关联证据；他人说法、Agent 推断、未知和冲突分别标记。
-- 只判断谁具备补全信息的职责、入口或协调能力，不推断对方故意隐瞒或推卸。
-- 知乎及全网结果只能作为待核实线索，不会自动升级为事实。
-- 产品只生成沟通建议，不冒充用户发送消息。
+- 先理解用户的目标、限制和已经尝试过的动作，再寻找能改变下一步的缺口。
+- 沟通提醒必须落到具体环节：观察到了什么、可能怎样误读、影响哪个决定、如何低成本核对。
+- 不给人物做可信度评分，不从局部信息推断对方动机，也不把抱怨扩写成指控。
+- 只推荐一个最值得尝试的下一步，不重复用户已经说明不可行的办法。
+- 外部经验只用来发现新角度或待验证入口，不能证明本单位的情况。
+- 原材料、用户反馈和模型指导分别保存。模型只能产生新的指导快照，不能改写用户内容。
+- 产品只生成沟通建议，不冒充用户发送消息；复制建议也不会被记录为已经执行。
 
 ## 架构
 
@@ -21,19 +33,25 @@
 响应式 SvelteKit PWA
         │
         ▼
-SvelteKit API（校验、脱敏、限流）
+SvelteKit API（校验、脱敏、限流、模式切换）
         │
-        ├── SQLite：案例、证据、背景板修订、Agent 事件
+        ├── SQLite
+        │     ├── 案例与原材料
+        │     ├── 用户反馈与上下文版本
+        │     ├── 引导快照及历史
+        │     └── 旧背景板、待审提案与事件
         │
-        └── 有状态通用 Agent 循环
-              ├── propose_board_patch（受 Zod、证据和安全规则约束）
-              ├── ask_user / finish
-              └── search_zhihu / search_global（只发送抽象查询）
-                    │
-                    └── 知乎开放平台
+        ├── Guidance 运行时（新模式）
+        │     ├── provide_guidance
+        │     ├── search_zhihu / search_global（可选）
+        │     └── 单案例串行 + 版本比较 + 有界调用
+        │
+        └── 旧 Background Board Agent（兼容模式）
 ```
 
-生产环境的模型层复用本机 OpenCode Server。每次模型决策创建一个短会话，关闭 OpenCode 自带的文件、Shell、网络和子任务工具，只允许模型通过背景板定义的 JSON 动作协议申请操作；会话结束后删除。也可以改用任意 OpenAI Chat Completions 兼容接口，或仅使用知乎直答模型。
+新运行时最多调用模型 5 次、搜索 2 次、修复结构或引用 1 次。有效的 `provide_guidance` 会直接结束本轮，不需要额外的完成调用。程序只硬校验结构、来源存在与归属、链接、预算、并发和版本冲突；建议是否有帮助由用户反馈和产品评测检验。
+
+生产模型可以使用 OpenAI Chat Completions 兼容接口、OpenCode Server 或知乎直答。模型没有文件、Shell 或任意写入权限，只能提交受约束的 JSON 动作。
 
 ## 本地运行
 
@@ -43,20 +61,19 @@ SvelteKit API（校验、脱敏、限流）
 cd app
 corepack pnpm install --frozen-lockfile
 cp .env.example .env
-pnpm dev
+BACKGROUND_BOARD_GUIDANCE_V2=1 pnpm dev
 ```
 
-没有配置模型时，匿名宿舍演示仍使用已审核的降级分析；普通新案例会明确提示模型尚未配置。
+应用固定使用 `/background-board` 路径。常用环境变量：
 
-环境变量名称如下，具体值不要提交到仓库：
+- `BACKGROUND_BOARD_GUIDANCE_V2=1`：启用整套引导模式；关闭或移除后使用旧页面和旧运行路径。
+- `BACKGROUND_BOARD_DATA_DIR`：SQLite 数据目录；本地留空时使用 `app/data`。
+- `AGENT_API_URL`、`AGENT_API_KEY`、`AGENT_MODEL`：OpenAI 兼容模型。
+- `OPENCODE_SERVER_URL`、`OPENCODE_SERVER_USERNAME`、`OPENCODE_SERVER_PASSWORD`：OpenCode Server。
+- `ZHIHU_ACCESS_SECRET`：知乎开放平台搜索；没有其他模型配置时也用于知乎直答。
+- `APP_VERSION`：健康检查展示的版本。
 
-- `BACKGROUND_BOARD_DATA_DIR`：SQLite 数据目录；本地可留空使用 `app/data`。
-- `AGENT_API_URL`、`AGENT_API_KEY`、`AGENT_MODEL`：OpenAI 兼容模型配置。
-- `OPENCODE_SERVER_URL`、`OPENCODE_SERVER_USERNAME`、`OPENCODE_SERVER_PASSWORD`：已有 OpenCode Server 配置。
-- `ZHIHU_ACCESS_SECRET`：知乎开放平台检索凭据；没有其他模型配置时也用于知乎直答。
-- `APP_VERSION`：健康检查展示的应用版本。
-
-模型选择优先级为 `AGENT_*` → OpenCode Server → 知乎直答。
+模型选择顺序是 `AGENT_*`、OpenCode Server、知乎直答。具体凭据只放在本地或部署环境，不提交到仓库。
 
 ## 验证
 
@@ -65,52 +82,36 @@ cd app
 pnpm format:check
 pnpm lint
 pnpm check
-pnpm test:unit -- --run
+pnpm exec vitest run
 pnpm exec playwright test
 pnpm build
 test -f build/index.js
 ```
 
-浏览器测试覆盖首页、匿名演示、证据回溯、外部知乎链接、追加回复后的待审变化与确认、敏感信息预览、新案例降级，以及禁止枚举案例列表。
+浏览器测试分别启动关闭开关的旧模式和开启开关的引导模式。引导模式只连接本地脚本模型，使用独立的临时 SQLite 目录，并显式清空真实模型与知乎凭据。固定的 10 个产品场景位于 `app/evals/guidance/cases.json`；脚本模型只验证工程合同，不能替代真实模型效果评价。
 
-## 部署与回滚
+## 数据、隐私与回退
 
-生产进程以独立的 `background-board` 用户运行，只监听 `127.0.0.1:3210`；Nginx 从 `/background-board/` 反向代理。SQLite 数据位于 `/srv/background-board/data`，发布版本位于 `/srv/background-board/releases`。
+- 浏览器先展示手机号、证件号码、邮箱及用户指定词的脱敏预览；服务端再次脱敏后才持久化。
+- 修改任何待发送内容或替换规则后，原来的预览确认立即失效。
+- 沟通疑点必须引用本案例材料或用户反馈；外部结果不能单独支撑对本次沟通的判断。
+- 较晚返回的旧分析可以留在历史中，但不能覆盖更新后的上下文。
+- 模型日志不含原始回复或完整提示，也不会进入下一轮产品上下文。
+- 当前没有账号系统。案例 UUID 仍是能力链接，公开体验只能使用匿名或合成材料。
 
-```bash
-./deploy/deploy.sh root@106.52.185.151
-```
+回退只需移除或关闭 `BACKGROUND_BOARD_GUIDANCE_V2` 并重启应用。旧背景板仍可读取；新增反馈和指导快照不会被删除，之后重新启用开关仍可恢复。
 
-脚本会本地构建、上传时间戳版本、安装生产依赖、原子切换 `current`、启用并重启 systemd 服务，再检查本机健康端点。Nginx 与 Secret 的首次安装步骤见 [deploy/README.md](deploy/README.md)。
+## 部署
 
-回滚：
+生产进程以独立的 `background-board` 用户运行，只监听 `127.0.0.1:3210`；Nginx 从 `/background-board/` 反向代理。SQLite 数据位于 `/srv/background-board/data`，发布版本位于 `/srv/background-board/releases`。首次安装和回滚命令见 [部署说明](deploy/README.md)。
 
-```bash
-previous=$(cat /srv/background-board/previous-release)
-ln -sfn "$previous" /srv/background-board/current.next
-mv -Tf /srv/background-board/current.next /srv/background-board/current
-systemctl restart background-board
-```
+本轮没有执行部署。默认切换应以完整工程闭环和真实模型产品评测为依据，不能只凭输出看起来更温和。
 
-## 隐私与安全模型
+## 文档
 
-- 创建案例前，浏览器会展示手机号、证件号码、邮箱及用户指定词的脱敏预览；服务端再次执行同样的脱敏后才持久化。
-- 每条证据可以标记为“负责方已明确回复过”，用于支撑“已确认事实”；未标记的证据只能支撑“他人说法”。没有证据的判断只能是推断或未知。该标记目前在已有案例页补充证据时可选。
-- 模型和知乎密钥只存在于服务端环境文件，公开响应、浏览器包和仓库均不包含密钥。
-- Agent 只能通过案例级受控工具提交更新；写入前校验完整数据结构、正式事实依据、外部线索原文一致性、证据引用和动机归因禁令。已有背景板的更新先持久化为待审提案，用户确认后才成为正式修订。
-- 模型提交的更新未通过安全校验时，会把具体原因回灌给它修正一次；连续两次失败才会终止本轮，并把失败标题、原因和恢复建议写入事件流返回给用户。
-- 外部搜索只接收 Agent 生成的抽象线索查询，不直接上传整段原始材料。
-- API 请求体限制为 100 KiB；高成本写接口按真实客户端 IP 限流；案例列表不公开。
-- 当前无账号系统。案例 UUID 是能力链接：知道完整链接的人可以读取该案例，因此公开体验时只能使用匿名或合成材料。
-
-## 当前边界
-
-比赛版本已经完成文本输入闭环，以下能力留到 P1：
-
-- 账号、访问控制、跨设备同步和真正的本地优先存储；
-- 图片/聊天截图上传、OCR 与用户纠错；
-- 持久化或分布式限流、多实例任务队列和长任务恢复；
-- 案例删除、数据保留期限和用户数据导出；
-- 户口迁移预置案例、个人背景地图和更丰富的答复分支。
-
-详细产品说明见 [背景板-项目说明.md](背景板-项目说明.md)，产品形态和验收标准见 [产品形态设计](docs/superpowers/specs/2026-09-05-background-board-product-form-design.md)，实现记录见 [实施计划](docs/superpowers/plans/2026-09-05-background-board-agent.md)。
+- [当前产品设计](docs/superpowers/specs/2026-09-11-guided-help-product-design.md)
+- [当前实施计划](docs/superpowers/plans/2026-09-11-guided-help-implementation-plan.md)
+- [本轮实施结果](docs/superpowers/reports/2026-09-11-guided-help-results.md)
+- [最初项目说明（历史）](背景板-项目说明.md)
+- [第一版产品形态（历史）](docs/superpowers/specs/2026-09-05-background-board-product-form-design.md)
+- [线上可靠性治理报告](docs/superpowers/reports/2026-09-10-线上可靠性治理报告.md)
