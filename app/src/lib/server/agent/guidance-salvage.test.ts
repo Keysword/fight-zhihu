@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import type { SourceRef } from '$lib/domain/guidance';
 import { salvageGuidance, type AllowedSourceIds } from './guidance-salvage';
 
-function allowed(overrides: Partial<Record<keyof AllowedSourceIds, string[]>> = {}): AllowedSourceIds {
+function allowed(
+	overrides: Partial<Record<keyof AllowedSourceIds, string[]>> = {}
+): AllowedSourceIds {
 	return {
 		evidence: new Set(overrides.evidence ?? ['evidence-1']),
 		input: new Set(overrides.input ?? ['input-1']),

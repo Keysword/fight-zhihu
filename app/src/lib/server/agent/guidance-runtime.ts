@@ -12,10 +12,7 @@ import { redactSearchQuery } from '$lib/privacy/redact';
 import type { CaseRepository } from '$lib/server/cases/repository';
 import type { ZhihuClient } from '$lib/server/zhihu/client';
 import { buildGuidanceMessages, type GuidancePromptPriorGuidance } from './guidance-prompt';
-import {
-	parseGuidanceActionEnvelope,
-	type GuidanceActionEnvelope
-} from './guidance-protocol';
+import { parseGuidanceActionEnvelope, type GuidanceActionEnvelope } from './guidance-protocol';
 import { salvageGuidance } from './guidance-salvage';
 import {
 	DEFAULT_MODEL_TIMEOUT_MS,
@@ -560,9 +557,7 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 					return finish(saveAndSummarise(salvaged.draft, salvaged));
 				}
 
-				return finish(
-					saveAndSummarise(action.guidance, { completeness: 'full', dropped: [] })
-				);
+				return finish(saveAndSummarise(action.guidance, { completeness: 'full', dropped: [] }));
 			}
 
 			return finish(

@@ -62,10 +62,7 @@ export function getCaseService(): CaseService {
 		zhihu,
 		modelTimeoutMs,
 		runBudgetMs: positiveIntegerOr(env.GUIDANCE_RUN_BUDGET_MS, DEFAULT_RUN_BUDGET_MS),
-		maxModelRetries: nonNegativeIntegerOr(
-			env.GUIDANCE_MODEL_MAX_RETRIES,
-			DEFAULT_MAX_MODEL_RETRIES
-		)
+		maxModelRetries: nonNegativeIntegerOr(env.GUIDANCE_MODEL_MAX_RETRIES, DEFAULT_MAX_MODEL_RETRIES)
 	});
 	service = createCaseService({
 		repository,

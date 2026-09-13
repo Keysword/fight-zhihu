@@ -641,8 +641,9 @@ describe('guidance runtime', () => {
 		expect(result).toMatchObject({ outcome: 'ready', modelCallCount: 1 });
 		expect(model.calls).toHaveLength(2);
 		expect(sleeps).toEqual([500]);
-		const records = finishedEvents(repo, created.id)[0]?.payload
-			.modelCalls as Array<Record<string, unknown>>;
+		const records = finishedEvents(repo, created.id)[0]?.payload.modelCalls as Array<
+			Record<string, unknown>
+		>;
 		expect(records).toHaveLength(2);
 		expect(records[0]).toMatchObject({ index: 1, attempt: 1, ok: false, retryReason: 'timeout' });
 		expect(records[1]).toMatchObject({ index: 1, attempt: 2, ok: true, retryReason: null });
@@ -714,19 +715,24 @@ describe('guidance runtime', () => {
 	it('returns ready with partial completeness when salvage succeeds', async () => {
 		const repo = repository();
 		const created = createCase(repo);
-		const model = scriptedModel([
-			provide({
+		// 模型实际发出的就是这段原始 JSON：疑点块不合规范，由降级路径抢救理解部分。
+		const malformed = JSON.stringify({
+			type: 'provide_guidance',
+			guidance: {
 				understanding: { summary: '只保留了理解。', openPoint: null, sources: [] },
 				communicationChecks: [{ bad: 'schema' }],
 				nextStep: null,
 				question: null,
 				changeSummary: null
-			})
-		]);
+			}
+		});
+		const model = scriptedModel([malformed, malformed]);
 
-		const result = await createGuidanceRuntime({ repository: repo, model, zhihu: zhihuClient() }).run(
-			created.id
-		);
+		const result = await createGuidanceRuntime({
+			repository: repo,
+			model,
+			zhihu: zhihuClient()
+		}).run(created.id);
 
 		expect(result.outcome).toBe('ready');
 		expect(result.guidance?.completeness).toBe('minimal');

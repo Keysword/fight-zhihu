@@ -492,9 +492,7 @@ export function createCaseRepository(path: string): CaseRepository {
 				const dropped = z.array(droppedGuidanceFieldSchema).parse(degradation?.dropped ?? []);
 				validateGuidanceReferences(database, caseId, draft, externalClues);
 				const existingRow = database
-					.prepare(
-						`SELECT ${GUIDANCE_COLUMNS} FROM guidance_snapshots WHERE run_id = ?`
-					)
+					.prepare(`SELECT ${GUIDANCE_COLUMNS} FROM guidance_snapshots WHERE run_id = ?`)
 					.get(runId) as GuidanceRow | undefined;
 				if (existingRow) {
 					const existing = guidanceFromRow(existingRow);
@@ -570,9 +568,7 @@ export function createCaseRepository(path: string): CaseRepository {
 			const caseRow = requireCase(caseId);
 			if (!caseRow.current_guidance_id) return null;
 			const row = database
-				.prepare(
-					`SELECT ${GUIDANCE_COLUMNS} FROM guidance_snapshots WHERE case_id = ? AND id = ?`
-				)
+				.prepare(`SELECT ${GUIDANCE_COLUMNS} FROM guidance_snapshots WHERE case_id = ? AND id = ?`)
 				.get(caseId, caseRow.current_guidance_id) as GuidanceRow | undefined;
 			return row ? guidanceFromRow(row) : null;
 		},
@@ -580,9 +576,7 @@ export function createCaseRepository(path: string): CaseRepository {
 		getGuidance(caseId, guidanceId) {
 			requireCase(caseId);
 			const row = database
-				.prepare(
-					`SELECT ${GUIDANCE_COLUMNS} FROM guidance_snapshots WHERE case_id = ? AND id = ?`
-				)
+				.prepare(`SELECT ${GUIDANCE_COLUMNS} FROM guidance_snapshots WHERE case_id = ? AND id = ?`)
 				.get(caseId, guidanceId) as GuidanceRow | undefined;
 			return row ? guidanceFromRow(row) : null;
 		},

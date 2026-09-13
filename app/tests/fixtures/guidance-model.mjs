@@ -1,7 +1,10 @@
 import { createServer } from 'node:http';
 
 const PORT = 4789;
-const failedRevisions = new Set();
+// 运行时默认 GUIDANCE_MODEL_MAX_RETRIES=2：耗尽 3 次尝试后才算整轮失败，
+// 手动重试开启新的一轮才会放行。
+const ATTEMPTS_BEFORE_FAILURE_CLEARED = 3;
+const failureCounts = new Map();
 
 function section(content, heading) {
 	const match = content.match(new RegExp(`【${heading}】[^\\n]*\\n([^\\n]+)`));
@@ -27,9 +30,12 @@ function guidanceAction(prompt) {
 	const title = String(caseRecord.title ?? '未命名案例');
 	const revisionKey = `${caseRecord.id}:${caseRecord.contextRevision}`;
 
-	if (title.includes('失败重试') && latestInput && !failedRevisions.has(revisionKey)) {
-		failedRevisions.add(revisionKey);
-		return { status: 503, body: { error: 'scripted first-attempt failure' } };
+	if (title.includes('失败重试') && latestInput) {
+		const failures = failureCounts.get(revisionKey) ?? 0;
+		if (failures < ATTEMPTS_BEFORE_FAILURE_CLEARED) {
+			failureCounts.set(revisionKey, failures + 1);
+			return { status: 503, body: { error: 'scripted first-attempt failure' } };
+		}
 	}
 
 	const asksQuestion = title.includes('追问') && inputs.length === 0;

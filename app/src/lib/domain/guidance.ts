@@ -144,13 +144,7 @@ export const guidanceDraftSchema = z
 		}
 	});
 
-export {
-	communicationCheckSchema,
-	contactSchema,
-	nextStepSchema,
-	understandingSchema,
-	textSchema
-};
+export { communicationCheckSchema, contactSchema, nextStepSchema, understandingSchema, textSchema };
 
 export type SourceRef = z.infer<typeof sourceRefSchema>;
 export type CaseInputRequest = z.infer<typeof caseInputSchema>;

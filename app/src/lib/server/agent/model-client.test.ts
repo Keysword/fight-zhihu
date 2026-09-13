@@ -152,12 +152,19 @@ describe('model client', () => {
 	it('rejects a hanging upstream as a retryable timeout within its own deadline', async () => {
 		const fetchImpl = neverResolvingFetch();
 		const client = createModelClient(
-			{ url: 'https://example.com/v1/chat/completions', apiKey: 'key', model: 'agent', isZhihu: false },
+			{
+				url: 'https://example.com/v1/chat/completions',
+				apiKey: 'key',
+				model: 'agent',
+				isZhihu: false
+			},
 			{ fetchImpl, timeoutMs: 40 }
 		);
 
 		const started = Date.now();
-		const error = await client.complete([{ role: 'user', content: 'hang' }]).catch((cause) => cause);
+		const error = await client
+			.complete([{ role: 'user', content: 'hang' }])
+			.catch((cause) => cause);
 
 		expect(error).toBeInstanceOf(ModelClientError);
 		expect(error).toMatchObject({ reason: 'timeout', retryable: true });
@@ -167,7 +174,12 @@ describe('model client', () => {
 	it('reports caller cancellation as non-retryable rather than as its own timeout', async () => {
 		const fetchImpl = neverResolvingFetch();
 		const client = createModelClient(
-			{ url: 'https://example.com/v1/chat/completions', apiKey: 'key', model: 'agent', isZhihu: false },
+			{
+				url: 'https://example.com/v1/chat/completions',
+				apiKey: 'key',
+				model: 'agent',
+				isZhihu: false
+			},
 			{ fetchImpl, timeoutMs: 5_000 }
 		);
 		const controller = new AbortController();
@@ -187,7 +199,12 @@ describe('model client', () => {
 	])('classifies HTTP %i as retryable=%s', async (status, retryable) => {
 		const fetchImpl = vi.fn<typeof fetch>(() => Promise.resolve(new Response('', { status })));
 		const client = createModelClient(
-			{ url: 'https://example.com/v1/chat/completions', apiKey: 'key', model: 'agent', isZhihu: false },
+			{
+				url: 'https://example.com/v1/chat/completions',
+				apiKey: 'key',
+				model: 'agent',
+				isZhihu: false
+			},
 			{ fetchImpl }
 		);
 
@@ -200,11 +217,21 @@ describe('model client', () => {
 
 	it('treats an unusable payload as non-retryable and a dropped connection as retryable', async () => {
 		const unusable = createModelClient(
-			{ url: 'https://example.com/v1/chat/completions', apiKey: 'key', model: 'agent', isZhihu: false },
+			{
+				url: 'https://example.com/v1/chat/completions',
+				apiKey: 'key',
+				model: 'agent',
+				isZhihu: false
+			},
 			{ fetchImpl: vi.fn<typeof fetch>(() => Promise.resolve(new Response('{}', { status: 200 }))) }
 		);
 		const dropped = createModelClient(
-			{ url: 'https://example.com/v1/chat/completions', apiKey: 'key', model: 'agent', isZhihu: false },
+			{
+				url: 'https://example.com/v1/chat/completions',
+				apiKey: 'key',
+				model: 'agent',
+				isZhihu: false
+			},
 			{ fetchImpl: vi.fn<typeof fetch>(() => Promise.reject(new TypeError('socket hang up'))) }
 		);
 
