@@ -19,11 +19,13 @@ import {
 	ModelClientError,
 	type ModelClient,
 	type ModelFailureReason,
-	type ModelMessage
+	type ModelMessage,
+	type ModelObservation
 } from './model-client';
 
 const MAX_MODEL_CALLS = 5;
 const MAX_SEARCHES = 2;
+const DEFAULT_SEARCH_TIMEOUT_MS = 8_000;
 const DEFAULT_MAX_CONTEXT_CHARACTERS = 120_000;
 // 单次调用可达 90 秒且最多五步推理，整轮预算要留出搜索与重试的余量，
 // 同时仍小于 nginx 的 300 秒读超时。
@@ -42,6 +44,17 @@ export interface GuidanceModelCallRecord {
 	parsed: boolean;
 	ok: boolean;
 	retryReason: ModelFailureReason | null;
+	/** 以下观测字段来自传输层；旧事件缺字段仍可读。 */
+	transport?: ModelObservation['transport'];
+	inputCharacters?: number;
+	outputCharacters?: number;
+	firstContentMs?: number | null;
+	inputTokens?: number | null;
+	outputTokens?: number | null;
+	reasoningTokens?: number | null;
+	finishReason?: string | null;
+	sessionCreateMs?: number;
+	sessionCleanupMs?: number;
 }
 
 export interface GuidanceSearchRecord {
@@ -96,12 +109,34 @@ export interface GuidanceRuntimeDependencies {
 	modelTimeoutMs?: number;
 	runBudgetMs?: number;
 	maxModelRetries?: number;
+	/** 逻辑检索上限；fast 策略默认 1。 */
+	maxSearches?: number;
+	/** 单次搜索截止时间；整轮取消优先。 */
+	searchTimeoutMs?: number;
+	/** 逻辑决策步数上限；真实请求数另计。 */
+	maxModelSteps?: number;
 	sleep?: (durationMs: number) => Promise<void>;
 	random?: () => number;
 }
 
 function messageCharacters(messages: readonly ModelMessage[]): number {
 	return messages.reduce((total, message) => total + message.content.length, 0);
+}
+
+/** 从传输层观测中挑出写入事件记录的字段；不含 prompt、密钥或模型输出正文。 */
+function observationFields(observation: ModelObservation): Partial<GuidanceModelCallRecord> {
+	return {
+		transport: observation.transport,
+		inputCharacters: observation.inputCharacters,
+		outputCharacters: observation.outputCharacters,
+		firstContentMs: observation.firstContentMs,
+		inputTokens: observation.inputTokens,
+		outputTokens: observation.outputTokens,
+		reasoningTokens: observation.reasoningTokens,
+		finishReason: observation.finishReason,
+		sessionCreateMs: observation.sessionCreateMs,
+		sessionCleanupMs: observation.sessionCleanupMs
+	};
 }
 
 function toolMessage(payload: Record<string, unknown>): ModelMessage {
@@ -183,6 +218,9 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 	const modelTimeoutMs = dependencies.modelTimeoutMs ?? DEFAULT_MODEL_TIMEOUT_MS;
 	const runBudgetMs = dependencies.runBudgetMs ?? DEFAULT_RUN_BUDGET_MS;
 	const maxModelRetries = dependencies.maxModelRetries ?? DEFAULT_MAX_MODEL_RETRIES;
+	const maxSearches = dependencies.maxSearches ?? MAX_SEARCHES;
+	const searchTimeoutMs = dependencies.searchTimeoutMs ?? DEFAULT_SEARCH_TIMEOUT_MS;
+	const maxModelSteps = dependencies.maxModelSteps ?? MAX_MODEL_CALLS;
 	const sleep =
 		dependencies.sleep ??
 		((durationMs: number) => new Promise<void>((resolve) => setTimeout(resolve, durationMs)));
@@ -212,8 +250,14 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 		}
 	}
 
-	async function execute(caseId: string, runId: string): Promise<GuidanceRunResult> {
+	async function execute(
+		caseId: string,
+		runId: string,
+		requestedAt: number
+	): Promise<GuidanceRunResult> {
 		const startedAt = now();
+		// 排队时间单独记录：调度请求时刻与 execute 实际开始时刻之差。
+		const queueMs = Math.max(0, Math.round(startedAt - requestedAt));
 		const modelCalls: GuidanceModelCallRecord[] = [];
 		const searches: GuidanceSearchRecord[] = [];
 		// One reasoning step can span several transport attempts; the budget counts steps.
@@ -281,6 +325,8 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 					contextRevision,
 					outcome: completed.outcome,
 					totalMs: Math.round(now() - startedAt),
+					queueMs,
+					requestedAt: Math.round(requestedAt),
 					modelCallCount: stepCount(),
 					modelCalls,
 					searchCount,
@@ -387,7 +433,7 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 				);
 			}
 
-			for (let callIndex = 1; callIndex <= MAX_MODEL_CALLS; callIndex += 1) {
+			for (let callIndex = 1; callIndex <= maxModelSteps; callIndex += 1) {
 				if (messageCharacters(messages) > maxContextCharacters) {
 					return finish(
 						failure(
@@ -431,9 +477,13 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 					const remainingMs = runBudgetMs - (attemptStartedAt - startedAt);
 					if (remainingMs <= 0) break;
 					attempted = true;
+					let observation: ModelObservation | null = null;
 					try {
 						rawAction = await model.complete(messages, {
-							timeoutMs: Math.min(modelTimeoutMs, remainingMs)
+							timeoutMs: Math.min(modelTimeoutMs, remainingMs),
+							onObservation: (observed) => {
+								observation = observed;
+							}
 						});
 						modelCalls.push({
 							index: callIndex,
@@ -442,7 +492,8 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 							actionType: null,
 							parsed: false,
 							ok: true,
-							retryReason: null
+							retryReason: null,
+							...(observation ? observationFields(observation) : {})
 						});
 						break;
 					} catch (error) {
@@ -459,7 +510,8 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 							actionType: null,
 							parsed: false,
 							ok: false,
-							retryReason: reason
+							retryReason: reason,
+							...(observation ? observationFields(observation) : {})
 						});
 						if (!retryable || attempt > maxModelRetries) break;
 						const delayMs = backoffDelayMs(attempt);
@@ -554,7 +606,7 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 				messages.push({ role: 'assistant', content: rawAction });
 
 				if (action.type === 'search_zhihu' || action.type === 'search_global') {
-					if (searchCount >= MAX_SEARCHES) {
+					if (searchCount >= maxSearches) {
 						searches.push({
 							index: searches.length + 1,
 							type: action.type,
@@ -664,7 +716,7 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 					searchCount,
 					repairTotal(),
 					'MODEL_CALL_LIMIT_REACHED',
-					'模型在五次调用内没有提交有效指导'
+					`模型在 ${maxModelSteps} 步内没有提交有效指导`
 				)
 			);
 		} catch (error) {
@@ -699,9 +751,10 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 	function startFlight(
 		caseId: string,
 		contextRevision: number,
-		runId: string
+		runId: string,
+		requestedAt: number
 	): Promise<GuidanceRunResult> {
-		const promise = execute(caseId, runId);
+		const promise = execute(caseId, runId, requestedAt);
 		const state: CaseFlightState = {
 			activeRevision: contextRevision,
 			activeRunId: runId,
@@ -717,7 +770,8 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 	function queueLatestFlight(
 		caseId: string,
 		state: CaseFlightState,
-		runId: string
+		runId: string,
+		requestedAt: number
 	): Promise<GuidanceRunResult> {
 		if (state.queuedPromise) return state.queuedPromise;
 		const predecessor = state.activePromise;
@@ -727,7 +781,7 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 			state.activePromise = queuedPromise;
 			state.queuedRunId = null;
 			state.queuedPromise = null;
-			return execute(caseId, runId);
+			return execute(caseId, runId, requestedAt);
 		};
 		const queuedPromise = predecessor.then(startLatest, startLatest);
 		state.queuedPromise = queuedPromise;
@@ -740,11 +794,12 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 	 * 复用在飞运行时返回既有 runId，排队时返回将要执行那一轮的 runId。
 	 */
 	function schedule(caseId: string): { runId: string; promise: Promise<GuidanceRunResult> } {
+		const requestedAt = now();
 		const requestedRevision = repository.getCaseContext(caseId).contextRevision;
 		const state = inFlight.get(caseId);
 		if (!state) {
 			const runId = randomUUID();
-			return { runId, promise: startFlight(caseId, requestedRevision, runId) };
+			return { runId, promise: startFlight(caseId, requestedRevision, runId, requestedAt) };
 		}
 		if (state.queuedPromise) {
 			return { runId: state.queuedRunId ?? randomUUID(), promise: state.queuedPromise };
@@ -754,7 +809,7 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 		}
 		const runId = randomUUID();
 		state.queuedRunId = runId;
-		return { runId, promise: queueLatestFlight(caseId, state, runId) };
+		return { runId, promise: queueLatestFlight(caseId, state, runId, requestedAt) };
 	}
 
 	function run(caseId: string): Promise<GuidanceRunResult> {

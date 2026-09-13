@@ -808,3 +808,106 @@ describe('guidance runtime', () => {
 		expect(result.guidance?.dropped.length).toBeGreaterThan(0);
 	});
 });
+
+describe('guidance runtime model observations', () => {
+	it('records transport observations per attempt on success and failure without leaking content', async () => {
+		const repo = repository();
+		const created = createCase(repo);
+		const actions = [
+			JSON.stringify({ type: 'provide_guidance', guidance: draft({ sources: [] }) })
+		];
+		let calls = 0;
+		const model: ModelClient = {
+			async complete(messages, options) {
+				calls += 1;
+				const failure = new ModelClientError('Agent 模型请求失败（HTTP 503）', {
+					reason: 'http',
+					status: 503
+				});
+				if (calls === 1) {
+					options?.onObservation?.({
+						transport: 'sdk',
+						durationMs: 120,
+						firstContentMs: null,
+						inputCharacters: messages.reduce((total, message) => total + message.content.length, 0),
+						outputCharacters: 0,
+						inputTokens: null,
+						outputTokens: null,
+						reasoningTokens: null,
+						finishReason: null
+					});
+					throw failure;
+				}
+				options?.onObservation?.({
+					transport: 'sdk',
+					durationMs: 800,
+					firstContentMs: 90,
+					inputCharacters: 40,
+					outputCharacters: actions[0].length,
+					inputTokens: 12,
+					outputTokens: 30,
+					reasoningTokens: null,
+					finishReason: 'stop'
+				});
+				return actions[0];
+			}
+		};
+
+		const result = await createGuidanceRuntime({
+			repository: repo,
+			model,
+			zhihu: zhihuClient(),
+			maxModelRetries: 2
+		}).run(created.id);
+
+		expect(result.outcome).toBe('ready');
+		const finished = finishedEvents(repo, created.id);
+		expect(finished).toHaveLength(1);
+		const payload = finished[0].payload as {
+			queueMs: number;
+			requestedAt: number;
+			modelCalls: Array<Record<string, unknown>>;
+		};
+		expect(payload.queueMs).toBe(0);
+		expect(typeof payload.requestedAt).toBe('number');
+		expect(payload.modelCalls).toHaveLength(2);
+		const [failedAttempt, okAttempt] = payload.modelCalls;
+		expect(failedAttempt).toMatchObject({ ok: false, retryReason: 'http', transport: 'sdk', outputCharacters: 0 });
+		expect(okAttempt).toMatchObject({
+			ok: true,
+			transport: 'sdk',
+			firstContentMs: 90,
+			inputTokens: 12,
+			outputTokens: 30,
+			finishReason: 'stop'
+		});
+		// 观测数据只含计数与耗时，不含 prompt、密钥或完整模型输出。
+		const serialised = JSON.stringify(payload);
+		expect(serialised).not.toContain(actions[0]);
+		expect(serialised).not.toContain('Agent 模型请求失败');
+	});
+
+	it('records a positive queue wait when execution starts after the request', async () => {
+		const repo = repository();
+		const created = createCase(repo);
+		let monotonic = 1_000;
+		const model = scriptedModel([provide(draft({ sources: [] }))]);
+		const result = await createGuidanceRuntime({
+			repository: repo,
+			model,
+			zhihu: zhihuClient(),
+			now: () => (monotonic += 250)
+		}).run(created.id);
+
+		expect(result.outcome).toBe('ready');
+		const payload = finishedEvents(repo, created.id)[0].payload as {
+			queueMs: number;
+			requestedAt: number;
+			totalMs: number;
+		};
+		// requestedAt 是调度时刻（首个 now() 读数），execute 随后启动，queueMs 不再是 0。
+		expect(payload.requestedAt).toBe(1_250);
+		expect(payload.queueMs).toBeGreaterThan(0);
+		expect(payload.totalMs).toBeGreaterThanOrEqual(payload.queueMs);
+	});
+});

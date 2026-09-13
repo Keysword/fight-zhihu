@@ -15,7 +15,8 @@
 		"format:check": "prettier --check .",
 		"test:unit": "vitest",
 		"test": "npm run test:unit -- --run && npm run test:e2e",
-		"test:e2e": "playwright install && playwright test"
+		"test:e2e": "playwright install && playwright test",
+		"eval:guidance:latency": "vitest run evals/guidance/latency.test.ts --config vitest.eval.config.ts --maxWorkers=1"
 	},
 	"devDependencies": {
 		"@eslint/js": "^10.0.1",
