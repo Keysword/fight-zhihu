@@ -17,6 +17,24 @@ export interface ModelConfiguration {
 export interface ModelCallOptions {
 	signal?: AbortSignal;
 	timeoutMs?: number;
+	/** 观测回调；回调自身异常不得让已成功的请求失败。 */
+	onObservation?: (observation: ModelObservation) => void;
+}
+
+/** 传输层观测：失败尝试也记录已知耗时与已观测值；缺失的 token 用量填 null，不能填 0。 */
+export interface ModelObservation {
+	transport: 'legacy-http' | 'opencode' | 'sdk';
+	durationMs: number;
+	/** 首个非空正文 delta 的耗时；非流式无法观测时为 null。 */
+	firstContentMs: number | null;
+	inputCharacters: number;
+	outputCharacters: number;
+	inputTokens: number | null;
+	outputTokens: number | null;
+	reasoningTokens: number | null;
+	finishReason: string | null;
+	sessionCreateMs?: number;
+	sessionCleanupMs?: number;
 }
 
 export interface ModelClient {
