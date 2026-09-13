@@ -282,8 +282,8 @@ describe('model client', () => {
 
 	it('falls back to the default timeout for absent or nonsensical configuration', () => {
 		expect(resolveModelTimeoutMs({ GUIDANCE_MODEL_TIMEOUT_MS: '45000' })).toBe(45_000);
-		expect(resolveModelTimeoutMs({})).toBe(30_000);
-		expect(resolveModelTimeoutMs({ GUIDANCE_MODEL_TIMEOUT_MS: '-5' })).toBe(30_000);
-		expect(resolveModelTimeoutMs({ GUIDANCE_MODEL_TIMEOUT_MS: 'soon' })).toBe(30_000);
+		expect(resolveModelTimeoutMs({})).toBe(90_000);
+		expect(resolveModelTimeoutMs({ GUIDANCE_MODEL_TIMEOUT_MS: '-5' })).toBe(90_000);
+		expect(resolveModelTimeoutMs({ GUIDANCE_MODEL_TIMEOUT_MS: 'soon' })).toBe(90_000);
 	});
 });

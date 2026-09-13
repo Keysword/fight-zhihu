@@ -158,7 +158,8 @@ test('does not carry guidance state across client-side case navigation', async (
 	const oldRequestHeld = new Promise<void>((resolve) => (releaseOldRequest = resolve));
 	let markIntercepted = () => {};
 	const oldRequestIntercepted = new Promise<void>((resolve) => (markIntercepted = resolve));
-	await page.route(`**/api/cases/${firstId}/guidance`, async (route) => {
+	// 界面改为"启动 + 轮询"后，被扣住的是启动请求。
+	await page.route(`**/api/cases/${firstId}/guidance/runs`, async (route) => {
 		markIntercepted();
 		await oldRequestHeld;
 		await route.continue();
@@ -181,7 +182,7 @@ test('does not carry guidance state across client-side case navigation', async (
 
 	const oldResponse = page.waitForResponse(
 		(response) =>
-			response.url().includes(`/api/cases/${firstId}/guidance`) && response.status() === 200
+			response.url().includes(`/api/cases/${firstId}/guidance/runs`) && response.status() === 200
 	);
 	releaseOldRequest();
 	await oldResponse;

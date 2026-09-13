@@ -712,6 +712,74 @@ describe('guidance runtime', () => {
 		expect(model.calls.length).toBeLessThan(5);
 	});
 
+	it('exposes real phases and elapsed time while a run is in flight', async () => {
+		const repo = repository();
+		const created = createCase(repo);
+		let release: (() => void) | undefined;
+		const gate = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		const model = {
+			calls: [] as unknown[],
+			async complete(request: unknown) {
+				this.calls.push(request);
+				await gate;
+				return provide(draft());
+			}
+		};
+
+		const runtime = createGuidanceRuntime({
+			repository: repo,
+			model: model as never,
+			zhihu: zhihuClient()
+		});
+
+		const started = runtime.start(created.id);
+		expect(started.reused).toBe(false);
+
+		// 复用在飞运行，不额外起新一轮。
+		expect(runtime.start(created.id)).toEqual({ runId: started.runId, reused: true });
+
+		await vi.waitFor(() => {
+			const progress = runtime.progress(created.id, started.runId);
+			expect(progress?.steps.length).toBeGreaterThan(0);
+		});
+		const running = runtime.progress(created.id, started.runId);
+		expect(running?.done).toBe(false);
+		expect(running?.phase).toBe('thinking');
+		expect(running?.steps[0]?.detail).toBe('正在理解你的材料');
+
+		release?.();
+		await vi.waitFor(() => {
+			expect(runtime.progress(created.id, started.runId)?.done).toBe(true);
+		});
+
+		const finished = runtime.progress(created.id, started.runId);
+		expect(finished?.result?.outcome).toBe('ready');
+		expect(finished?.steps.map((step) => step.phase)).toContain('saving');
+		expect(repo.listEvents(created.id).map((event) => event.type)).toContain('guidance.step');
+	});
+
+	it('does not leak progress across cases and forgets unknown runs', async () => {
+		const repo = repository();
+		const created = createCase(repo);
+		const other = createCase(repo);
+		const model = scriptedModel([provide(draft())]);
+		const runtime = createGuidanceRuntime({
+			repository: repo,
+			model,
+			zhihu: zhihuClient()
+		});
+
+		const started = runtime.start(created.id);
+		await vi.waitFor(() => {
+			expect(runtime.progress(created.id, started.runId)?.done).toBe(true);
+		});
+
+		expect(runtime.progress(other.id, started.runId)).toBeNull();
+		expect(runtime.progress(created.id, 'no-such-run')).toBeNull();
+	});
+
 	it('returns ready with partial completeness when salvage succeeds', async () => {
 		const repo = repository();
 		const created = createCase(repo);

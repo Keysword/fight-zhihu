@@ -29,6 +29,8 @@
 	let guidedStatus = $state('');
 	let guidedFailure = $state('');
 	let guidedLoading = $state(false);
+	let guidedPhase = $state('');
+	let guidedElapsedMs = $state(0);
 
 	let proposedOverride = $state<BackgroundBoard | null | undefined>(undefined);
 	let proposedBoard = $derived(
@@ -81,6 +83,8 @@
 		guidedStatus = '';
 		guidedFailure = '';
 		guidedLoading = false;
+		guidedPhase = '';
+		guidedElapsedMs = 0;
 		proposedOverride = undefined;
 		changesOverride = null;
 		newEvidence = '';
@@ -95,17 +99,52 @@
 		failureSuggestion = '';
 	});
 
+	const PHASE_LABELS: Record<string, string> = {
+		thinking: '正在理解你的材料',
+		searching: '正在检索相似经验',
+		repairing: '正在重新整理',
+		saving: '正在保存这一版'
+	};
+
+	function pollDelayMs() {
+		return 1_500;
+	}
+
+	/**
+	 * 启动一轮整理后轮询进度，等待期间把真实阶段和已耗时显示出来。
+	 * 长推理不再表现为一个可能被中间环节掐断的阻塞请求。
+	 */
 	async function runGuidance(savedInput: '补充' | null = null, caseId = view.case.id) {
 		guidedLoading = true;
 		guidedFailure = '';
+		guidedPhase = '';
+		guidedElapsedMs = 0;
 		try {
-			const response = await fetch(`${base}/api/cases/${caseId}/guidance`, {
+			const startResponse = await fetch(`${base}/api/cases/${caseId}/guidance/runs`, {
 				method: 'POST'
 			});
-			const payload = await response.json();
+			const startPayload = await startResponse.json();
 			if (!isCurrentCase(caseId)) return;
-			if (!response.ok || !payload.ok)
-				throw new Error(payload.error?.message ?? '本轮整理没有完成');
+			if (!startResponse.ok || !startPayload.ok)
+				throw new Error(startPayload.error?.message ?? '本轮整理没有开始');
+
+			const runId = startPayload.data.runId as string;
+			let payload;
+			for (;;) {
+				await new Promise((resolve) => setTimeout(resolve, pollDelayMs()));
+				if (!isCurrentCase(caseId)) return;
+				const pollResponse = await fetch(`${base}/api/cases/${caseId}/guidance/runs/${runId}`);
+				const pollPayload = await pollResponse.json();
+				if (!isCurrentCase(caseId)) return;
+				if (!pollResponse.ok || !pollPayload.ok)
+					throw new Error(pollPayload.error?.message ?? '本轮整理没有完成');
+				guidedPhase = String(pollPayload.data.phase ?? '');
+				guidedElapsedMs = Number(pollPayload.data.elapsedMs ?? 0);
+				if (pollPayload.data.done) {
+					payload = { ok: true, data: { ...pollPayload.data.view, run: pollPayload.data.run } };
+					break;
+				}
+			}
 			updatedView = payload.data;
 			if (payload.data.guidance) shownGuidance = payload.data.guidance;
 			if (payload.data.run?.outcome === 'failed') {
@@ -376,6 +415,16 @@
 				<button class="button" type="button" disabled={guidedLoading} onclick={() => runGuidance()}>
 					{guidedLoading ? '正在整理…' : '开始整理'}
 				</button>
+			</section>
+		{/if}
+
+		{#if guidedLoading}
+			<section class="guided-progress" role="status" aria-live="polite">
+				<p class="progress-phase">{PHASE_LABELS[guidedPhase] ?? '正在整理…'}</p>
+				<p class="fine-print">
+					已用 {Math.round(guidedElapsedMs / 1000)} 秒{#if guidedElapsedMs >= 20_000}
+						· 比平常久一些，仍在进行{/if}
+				</p>
 			</section>
 		{/if}
 

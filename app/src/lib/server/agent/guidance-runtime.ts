@@ -25,8 +25,12 @@ import {
 const MAX_MODEL_CALLS = 5;
 const MAX_SEARCHES = 2;
 const DEFAULT_MAX_CONTEXT_CHARACTERS = 120_000;
-export const DEFAULT_RUN_BUDGET_MS = 120_000;
+// 单次调用可达 90 秒且最多五步推理，整轮预算要留出搜索与重试的余量，
+// 同时仍小于 nginx 的 300 秒读超时。
+export const DEFAULT_RUN_BUDGET_MS = 240_000;
 export const DEFAULT_MAX_MODEL_RETRIES = 2;
+/** 完成后进度仍可查询的保留时长，供轮询取回最终结果。 */
+export const PROGRESS_RETENTION_MS = 5 * 60_000;
 const RETRY_BACKOFF_MS = [500, 1_500];
 const RETRY_JITTER_RATIO = 0.2;
 
@@ -46,6 +50,30 @@ export interface GuidanceSearchRecord {
 	durationMs: number;
 	outcome: 'ok' | 'unavailable' | 'limit';
 	resultCount: number;
+}
+
+export type GuidancePhase = 'thinking' | 'searching' | 'repairing' | 'saving';
+
+export interface GuidanceProgressStep {
+	index: number;
+	phase: GuidancePhase;
+	detail: string;
+	atMs: number;
+}
+
+export interface GuidanceProgress {
+	runId: string;
+	caseId: string;
+	contextRevision: number;
+	phase: GuidancePhase;
+	steps: GuidanceProgressStep[];
+	elapsedMs: number;
+	done: boolean;
+	result: GuidanceRunResult | null;
+	/** 完成后可被轮询取回结果的截止时刻（epoch 毫秒）；运行中为 null。 */
+	retainUntil: number | null;
+	/** 本轮起点，取自注入的单调时钟，用于计算运行中的已耗时。 */
+	startedAt: number;
 }
 
 export interface GuidanceRunResult {
@@ -167,13 +195,24 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 
 	interface CaseFlightState {
 		activeRevision: number;
+		activeRunId: string;
 		activePromise: Promise<GuidanceRunResult>;
+		queuedRunId: string | null;
 		queuedPromise: Promise<GuidanceRunResult> | null;
 	}
 	const inFlight = new Map<string, CaseFlightState>();
+	// 单进程部署下用进程内登记表承载"运行中"的进度；完成后保留一段时间供轮询取结果。
+	const progressByRun = new Map<string, GuidanceProgress>();
+	const latestRunByCase = new Map<string, string>();
 
-	async function execute(caseId: string): Promise<GuidanceRunResult> {
-		const runId = randomUUID();
+	function pruneProgress(): void {
+		if (progressByRun.size <= 200) return;
+		for (const [candidate, progress] of progressByRun) {
+			if (progress.done) progressByRun.delete(candidate);
+		}
+	}
+
+	async function execute(caseId: string, runId: string): Promise<GuidanceRunResult> {
 		const startedAt = now();
 		const modelCalls: GuidanceModelCallRecord[] = [];
 		const searches: GuidanceSearchRecord[] = [];
@@ -190,8 +229,51 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 		if (!caseRecord) throw new Error(`找不到案例：${caseId}`);
 		const { contextRevision } = repository.getCaseContext(caseId);
 
+		const progress: GuidanceProgress = {
+			runId,
+			caseId,
+			contextRevision,
+			phase: 'thinking',
+			steps: [],
+			elapsedMs: 0,
+			done: false,
+			result: null,
+			retainUntil: null,
+			startedAt
+		};
+		progressByRun.set(runId, progress);
+		latestRunByCase.set(caseId, runId);
+		pruneProgress();
+		repository.appendEvent(caseId, {
+			type: 'guidance.run.started',
+			payload: { runId, contextRevision }
+		});
+
+		/** 只记录阶段与计数，不写入原始模型回复或完整提示。 */
+		function recordStep(phase: GuidancePhase, detail: string): void {
+			const atMs = Math.round(now() - startedAt);
+			progress.phase = phase;
+			progress.elapsedMs = atMs;
+			const step: GuidanceProgressStep = {
+				index: progress.steps.length + 1,
+				phase,
+				detail,
+				atMs
+			};
+			progress.steps.push(step);
+			repository.appendEvent(caseId, {
+				type: 'guidance.step',
+				payload: { runId, index: step.index, phase, detail }
+			});
+		}
+
 		function finish(completed: GuidanceRunResult): GuidanceRunResult {
 			result = completed;
+			progress.done = true;
+			progress.result = completed;
+			progress.elapsedMs = Math.round(now() - startedAt);
+			const settledAt = Date.now();
+			progress.retainUntil = settledAt + PROGRESS_RETENTION_MS;
 			repository.appendEvent(caseId, {
 				type: 'guidance.run.finished',
 				payload: {
@@ -220,6 +302,7 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 			draft: GuidanceDraft,
 			degradation: { completeness: GuidanceCompleteness; dropped: DroppedGuidanceField[] }
 		): GuidanceRunResult {
+			recordStep('saving', '正在保存这一版');
 			const saved = repository.saveGuidance(
 				caseId,
 				contextRevision,
@@ -333,14 +416,21 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 					);
 				}
 
+				recordStep(
+					'thinking',
+					callIndex === 1 ? '正在理解你的材料' : `正在继续推进第 ${callIndex} 步判断`
+				);
+
 				let rawAction: string | undefined;
 				let lastReason: ModelFailureReason | null = null;
+				let attempted = false;
 				// Retries cover transport flakiness only, so they deliberately do not consume
 				// MAX_MODEL_CALLS, which budgets reasoning steps.
 				for (let attempt = 1; attempt <= maxModelRetries + 1; attempt += 1) {
 					const attemptStartedAt = now();
 					const remainingMs = runBudgetMs - (attemptStartedAt - startedAt);
 					if (remainingMs <= 0) break;
+					attempted = true;
 					try {
 						rawAction = await model.complete(messages, {
 							timeoutMs: Math.min(modelTimeoutMs, remainingMs)
@@ -386,7 +476,9 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 							stepCount(),
 							searchCount,
 							repairTotal(),
-							lastReason === 'timeout' && now() - startedAt >= runBudgetMs
+							// 一次尝试都没发出，或最后一次因超时告败且预算已尽，都属于时间用尽，
+							// 不应报成模型自身失败。
+							!attempted || (lastReason === 'timeout' && now() - startedAt >= runBudgetMs)
 								? 'TIME_BUDGET_EXCEEDED'
 								: 'MODEL_CALL_FAILED',
 							'指导模型暂时无法完成本轮请求'
@@ -413,6 +505,7 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 							)
 						);
 					}
+					recordStep('repairing', '正在重新整理');
 					repairs.schema += 1;
 					messages.push(
 						repairMessage(reason, evidenceIds, inputIds, new Set(gatheredClues.keys()))
@@ -426,6 +519,7 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 					// One strict-schema repair is still offered before falling back to salvage, so a
 					// model that can simply restate a compliant reply is given that chance first.
 					if (repairs.schema < 1) {
+						recordStep('repairing', '正在重新整理');
 						repairs.schema += 1;
 						messages.push(
 							repairMessage(envelope.reason, evidenceIds, inputIds, new Set(gatheredClues.keys()))
@@ -477,6 +571,7 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 						continue;
 					}
 
+					recordStep('searching', '正在检索相似经验');
 					searchCount += 1;
 					const searchStartedAt = now();
 					const query = redactSearchQuery(action.query, sourceLabels);
@@ -530,6 +625,7 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 					// One reference repair is offered on its own budget; after that the illegal ids are
 					// stripped rather than used to discard an otherwise usable reply.
 					if (repairs.reference < 1) {
+						recordStep('repairing', '正在核对引用的材料');
 						repairs.reference += 1;
 						messages.push(
 							repairMessage(reason, evidenceIds, inputIds, new Set(gatheredClues.keys()))
@@ -600,11 +696,17 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 		void promise.then(clear, clear);
 	}
 
-	function startFlight(caseId: string, contextRevision: number): Promise<GuidanceRunResult> {
-		const promise = execute(caseId);
+	function startFlight(
+		caseId: string,
+		contextRevision: number,
+		runId: string
+	): Promise<GuidanceRunResult> {
+		const promise = execute(caseId, runId);
 		const state: CaseFlightState = {
 			activeRevision: contextRevision,
+			activeRunId: runId,
 			activePromise: promise,
+			queuedRunId: null,
 			queuedPromise: null
 		};
 		inFlight.set(caseId, state);
@@ -612,14 +714,20 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 		return promise;
 	}
 
-	function queueLatestFlight(caseId: string, state: CaseFlightState): Promise<GuidanceRunResult> {
+	function queueLatestFlight(
+		caseId: string,
+		state: CaseFlightState,
+		runId: string
+	): Promise<GuidanceRunResult> {
 		if (state.queuedPromise) return state.queuedPromise;
 		const predecessor = state.activePromise;
 		const startLatest = () => {
 			state.activeRevision = repository.getCaseContext(caseId).contextRevision;
+			state.activeRunId = runId;
 			state.activePromise = queuedPromise;
+			state.queuedRunId = null;
 			state.queuedPromise = null;
-			return execute(caseId);
+			return execute(caseId, runId);
 		};
 		const queuedPromise = predecessor.then(startLatest, startLatest);
 		state.queuedPromise = queuedPromise;
@@ -627,14 +735,76 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 		return queuedPromise;
 	}
 
+	/**
+	 * 单案例串行调度。返回 runId 供轮询定位本轮进度：
+	 * 复用在飞运行时返回既有 runId，排队时返回将要执行那一轮的 runId。
+	 */
+	function schedule(caseId: string): { runId: string; promise: Promise<GuidanceRunResult> } {
+		const requestedRevision = repository.getCaseContext(caseId).contextRevision;
+		const state = inFlight.get(caseId);
+		if (!state) {
+			const runId = randomUUID();
+			return { runId, promise: startFlight(caseId, requestedRevision, runId) };
+		}
+		if (state.queuedPromise) {
+			return { runId: state.queuedRunId ?? randomUUID(), promise: state.queuedPromise };
+		}
+		if (state.activeRevision === requestedRevision) {
+			return { runId: state.activeRunId, promise: state.activePromise };
+		}
+		const runId = randomUUID();
+		state.queuedRunId = runId;
+		return { runId, promise: queueLatestFlight(caseId, state, runId) };
+	}
+
+	function run(caseId: string): Promise<GuidanceRunResult> {
+		return schedule(caseId).promise;
+	}
+
 	return {
-		run(caseId: string): Promise<GuidanceRunResult> {
+		run,
+
+		/**
+		 * 启动一轮但不等待完成，立即返回可轮询的 runId。
+		 * 同一 contextRevision 已有在飞运行时复用它，不额外起新一轮。
+		 */
+		start(caseId: string): { runId: string; reused: boolean } {
+			const before = inFlight.get(caseId);
 			const requestedRevision = repository.getCaseContext(caseId).contextRevision;
+			const reused = Boolean(before && before.activeRevision === requestedRevision);
+			const { runId, promise } = schedule(caseId);
+			// 后台推进；结果由轮询接口取回，这里只避免未处理的 promise 拒绝。
+			void promise.catch(() => {});
+			return { runId, reused };
+		},
+
+		progress(caseId: string, runId: string): GuidanceProgress | null {
+			const found = progressByRun.get(runId);
+			if (!found || found.caseId !== caseId) return null;
+			if (found.retainUntil !== null && Date.now() > found.retainUntil) {
+				progressByRun.delete(runId);
+				return null;
+			}
+			if (!found.done) found.elapsedMs = Math.round(now() - found.startedAt);
+			return found;
+		},
+
+		/**
+		 * 查看当前 contextRevision 上是否已有在飞运行，不产生副作用。
+		 * 调用方据此决定"复用既有运行"还是"计一次限流后再启动新的一轮"。
+		 */
+		activeRun(caseId: string): { runId: string } | null {
 			const state = inFlight.get(caseId);
-			if (!state) return startFlight(caseId, requestedRevision);
-			if (state.queuedPromise) return state.queuedPromise;
-			if (state.activeRevision === requestedRevision) return state.activePromise;
-			return queueLatestFlight(caseId, state);
+			if (!state) return null;
+			const requestedRevision = repository.getCaseContext(caseId).contextRevision;
+			if (state.activeRevision !== requestedRevision) return null;
+			const progress = progressByRun.get(state.activeRunId);
+			if (!progress || progress.done) return null;
+			return { runId: state.activeRunId };
+		},
+
+		latestRunId(caseId: string): string | null {
+			return latestRunByCase.get(caseId) ?? null;
 		}
 	};
 }

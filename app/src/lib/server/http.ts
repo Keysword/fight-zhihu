@@ -14,7 +14,10 @@ import {
 } from '$lib/server/cases/repository';
 import { ZhihuApiError, ZhihuRateLimitError } from '$lib/server/zhihu/client';
 import { RateLimitExceededError } from '$lib/server/rate-limit';
-import { GuidanceModeDisabledError } from '$lib/server/services/case-service';
+import {
+	GuidanceModeDisabledError,
+	GuidanceRunNotFoundError
+} from '$lib/server/services/case-service';
 
 const MAX_BODY_BYTES = 100_000;
 
@@ -66,6 +69,10 @@ export function apiError(error: unknown): Response {
 	} else if (error instanceof GuidanceModeDisabledError) {
 		status = 404;
 		code = 'GUIDANCE_MODE_DISABLED';
+		message = error.message;
+	} else if (error instanceof GuidanceRunNotFoundError) {
+		status = 404;
+		code = 'GUIDANCE_RUN_NOT_FOUND';
 		message = error.message;
 	} else if (error instanceof ZhihuRateLimitError) {
 		status = 429;

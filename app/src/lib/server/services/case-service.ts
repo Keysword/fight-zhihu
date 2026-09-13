@@ -12,7 +12,7 @@ import {
 import type { AgentEvent, CaseRecord } from '$lib/domain/types';
 import { redactText, type RedactionReplacement } from '$lib/privacy/redact';
 import { buildDormDemoFallback } from '$lib/server/agent/fallback';
-import type { GuidanceRunResult } from '$lib/server/agent/guidance-runtime';
+import type { GuidanceProgress, GuidanceRunResult } from '$lib/server/agent/guidance-runtime';
 import { runErrorDetail, type AgentRunResult } from '$lib/server/agent/runtime';
 import { validateBoardForCase } from '$lib/server/agent/tools';
 import {
@@ -46,6 +46,16 @@ export interface AgentRunner {
 
 export interface GuidanceRunner {
 	run(caseId: string): Promise<GuidanceRunResult>;
+	start?(caseId: string): { runId: string; reused: boolean };
+	progress?(caseId: string, runId: string): GuidanceProgress | null;
+	activeRun?(caseId: string): { runId: string } | null;
+}
+
+export class GuidanceRunNotFoundError extends Error {
+	constructor() {
+		super('这轮整理的进度已经过期，请重新开始整理');
+		this.name = 'GuidanceRunNotFoundError';
+	}
 }
 
 export class GuidanceModeDisabledError extends Error {
@@ -370,6 +380,49 @@ export function createCaseService(dependencies: {
 			requireCase(caseId);
 			const run = await runGuidanceRecoverably(caseId);
 			return { ...view(caseId), run };
+		},
+
+		/** 无副作用地查看当前是否已有在飞运行，供调用方决定是否计入限流。 */
+		activeGuidanceRun(caseId: string): { runId: string } | null {
+			requireGuidanceMode();
+			requireCase(caseId);
+			return guidanceRunner.activeRun?.(caseId) ?? null;
+		},
+
+		/** 启动一轮整理但立即返回，让界面可以轮询真实进度而不是干等一个阻塞请求。 */
+		startGuidanceRun(caseId: string): { runId: string; reused: boolean } {
+			requireGuidanceMode();
+			requireCase(caseId);
+			if (!guidanceRunner.start) throw new GuidanceRunNotFoundError();
+			return guidanceRunner.start(caseId);
+		},
+
+		getGuidanceRun(
+			caseId: string,
+			runId: string
+		): {
+			runId: string;
+			phase: GuidanceProgress['phase'];
+			steps: GuidanceProgress['steps'];
+			elapsedMs: number;
+			done: boolean;
+			run: GuidanceRunResult | null;
+			view: CaseView | null;
+		} {
+			requireGuidanceMode();
+			requireCase(caseId);
+			const progress = guidanceRunner.progress?.(caseId, runId);
+			if (!progress) throw new GuidanceRunNotFoundError();
+			return {
+				runId: progress.runId,
+				phase: progress.phase,
+				steps: progress.steps,
+				elapsedMs: progress.elapsedMs,
+				done: progress.done,
+				run: progress.result,
+				// 只有完成后才回传整份视图，避免轮询期间反复传输大对象。
+				view: progress.done ? view(caseId) : null
+			};
 		},
 
 		async runCase(caseId: string): Promise<CaseView & { run: AgentRunResult | GuidanceRunResult }> {

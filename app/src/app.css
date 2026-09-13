@@ -1200,6 +1200,19 @@ h1,
 	color: var(--muted);
 	line-height: 1.7;
 }
+.guided-progress {
+	margin-top: 34px;
+	padding: 22px 30px;
+	background: var(--paper);
+	border-left: 7px solid var(--blue);
+}
+.guided-progress .progress-phase {
+	font-weight: 600;
+	line-height: 1.7;
+}
+.guided-progress .fine-print {
+	margin-top: 6px;
+}
 
 @media (max-width: 800px) {
 	.site-header {

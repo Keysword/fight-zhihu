@@ -23,7 +23,8 @@ export interface ModelClient {
 	complete(messages: ModelMessage[], options?: ModelCallOptions): Promise<string>;
 }
 
-export const DEFAULT_MODEL_TIMEOUT_MS = 30_000;
+// 真实推理（尤其 OpenCode 协议）常常超过半分钟，过激的超时会把正常运行判成失败。
+export const DEFAULT_MODEL_TIMEOUT_MS = 90_000;
 const SESSION_CLEANUP_TIMEOUT_MS = 5_000;
 
 export type ModelFailureReason = 'timeout' | 'network' | 'http' | 'payload' | 'cancelled';
