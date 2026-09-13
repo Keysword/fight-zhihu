@@ -245,10 +245,16 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 		activeRevision: number;
 		activeRunId: string;
 		activePromise: Promise<GuidanceRunResult>;
+		/** 更新输入替代旧运行时 abort 的控制器。 */
+		activeController: AbortController | null;
+		/** 单调 generation：清理所有权校验，防止旧 promise 删除新状态。 */
+		activeGeneration: number;
 		queuedRunId: string | null;
 		queuedPromise: Promise<GuidanceRunResult> | null;
 	}
 	const inFlight = new Map<string, CaseFlightState>();
+	let generationCounter = 0;
+	const nextGeneration = () => (generationCounter += 1);
 	// 单进程部署下用进程内登记表承载"运行中"的进度；完成后保留一段时间供轮询取结果。
 	const progressByRun = new Map<string, GuidanceProgress>();
 	const latestRunByCase = new Map<string, string>();
@@ -263,7 +269,8 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 	async function execute(
 		caseId: string,
 		runId: string,
-		requestedAt: number
+		requestedAt: number,
+		supersede: AbortController
 	): Promise<GuidanceRunResult> {
 		const startedAt = now();
 		// 排队时间单独记录：调度请求时刻与 execute 实际开始时刻之差。
@@ -275,6 +282,8 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 			() => deadlineController.abort(new DOMException('整轮时间预算用尽', 'TimeoutError')),
 			runBudgetMs
 		);
+		// 模型/搜索使用的组合信号：整轮截止或被更新输入替代都会立即中止在飞请求。
+		const runSignal = AbortSignal.any([deadlineController.signal, supersede.signal]);
 		const modelCalls: GuidanceModelCallRecord[] = [];
 		const searches: GuidanceSearchRecord[] = [];
 		// One reasoning step can span several transport attempts; the budget counts steps.
@@ -290,18 +299,26 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 		if (!caseRecord) throw new Error(`找不到案例：${caseId}`);
 		const { contextRevision } = repository.getCaseContext(caseId);
 
-		const progress: GuidanceProgress = {
-			runId,
-			caseId,
-			contextRevision,
-			phase: 'thinking',
-			steps: [],
-			elapsedMs: 0,
-			done: false,
-			result: null,
-			retainUntil: null,
-			startedAt
-		};
+		const progress: GuidanceProgress =
+			// 排队中的运行在调度时已建立进度条目，保证 runId 立即可查询、不返回 404。
+			progressByRun.get(runId) ?? {
+				runId,
+				caseId,
+				contextRevision,
+				phase: 'thinking',
+				steps: [],
+				elapsedMs: 0,
+				done: false,
+				result: null,
+				retainUntil: null,
+				startedAt
+			};
+		progress.caseId = caseId;
+		progress.contextRevision = contextRevision;
+		progress.startedAt = startedAt;
+		progress.done = false;
+		progress.result = null;
+		progress.retainUntil = null;
 		progressByRun.set(runId, progress);
 		latestRunByCase.set(caseId, runId);
 		pruneProgress();
@@ -360,6 +377,20 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 		}
 
 		const gatheredClues = new Map<string, ExternalClue>();
+
+		/** 复用既有 superseded outcome：新版输入已替代本轮，不虚构成功。 */
+		function supersededResult(): GuidanceRunResult {
+			return {
+				runId,
+				outcome: 'superseded',
+				guidance: null,
+				error: { code: 'SUPERSEDED', message: '已由更新后的整理替代' },
+				contextRevision,
+				modelCallCount: stepCount(),
+				searchCount,
+				repairCount: repairTotal()
+			};
+		}
 
 		function saveAndSummarise(
 			draft: GuidanceDraft,
@@ -451,6 +482,9 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 			}
 
 			for (let callIndex = 1; callIndex <= maxModelSteps; callIndex += 1) {
+				if (supersede.signal.aborted) {
+					return finish(supersededResult());
+				}
 				if (messageCharacters(messages) > maxContextCharacters) {
 					return finish(
 						failure(
@@ -494,17 +528,21 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 					const remainingMs = runBudgetMs - (attemptStartedAt - startedAt);
 					if (remainingMs <= 0) break;
 					attempted = true;
+					let attemptRecord: GuidanceModelCallRecord | null = null;
 					let observation: ModelObservation | null = null;
 					try {
 						rawAction = await model.complete(messages, {
 							timeoutMs: Math.min(modelTimeoutMs, remainingMs),
-							// 整轮截止信号：预算用尽后，迟到的结果不能再影响本轮。
-							signal: deadlineController.signal,
+							// 组合信号：整轮截止或被更新输入替代，都立即中止在飞请求。
+							signal: runSignal,
+							// 观测回调（含 OpenCode 后台清理的迟到观测）合并进同一条
+							// attempt 记录；回调自身异常不得改写请求结果。
 							onObservation: (observed) => {
-								observation = observed;
+								if (attemptRecord) Object.assign(attemptRecord, observationFields(observed));
+								else observation = observed;
 							}
 						});
-						modelCalls.push({
+						attemptRecord = {
 							index: callIndex,
 							attempt,
 							durationMs: Math.round(now() - attemptStartedAt),
@@ -513,7 +551,8 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 							ok: true,
 							retryReason: null,
 							...(observation ? observationFields(observation) : {})
-						});
+						};
+						modelCalls.push(attemptRecord);
 						break;
 					} catch (error) {
 						// Only failures the client itself classified are retried; an unclassified
@@ -521,7 +560,7 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 						const classified = error instanceof ModelClientError ? error : null;
 						const reason: ModelFailureReason = classified?.reason ?? 'payload';
 						lastReason = reason;
-						modelCalls.push({
+						attemptRecord = {
 							index: callIndex,
 							attempt,
 							durationMs: Math.round(now() - attemptStartedAt),
@@ -530,7 +569,8 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 							ok: false,
 							retryReason: reason,
 							...(observation ? observationFields(observation) : {})
-						});
+						};
+						modelCalls.push(attemptRecord);
 						const retriesUsed = attempt - 1;
 						const attemptMs = Math.round(now() - attemptStartedAt);
 						// legacy 保留原重试契约（分类可重试即重试）；fast 只对快速 network/5xx 补一次。
@@ -549,10 +589,13 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 					}
 				}
 
-				// 整轮截止后（含模型无视取消信号而迟到返回的正文）一律丢弃。
-				if (deadlineController.signal.aborted) rawAction = undefined;
+				// 整轮截止或被替代后（含模型无视取消信号而迟到返回的正文）一律丢弃。
+				if (runSignal.aborted) rawAction = undefined;
 
 				if (rawAction === undefined) {
+					if (supersede.signal.aborted) {
+						return finish(supersededResult());
+					}
 					const budgetExhausted =
 						!attempted ||
 						deadlineController.signal.aborted ||
@@ -671,8 +714,8 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 						count: Math.max(1, Math.trunc(action.count))
 					};
 					const searchOptions: SearchCallOptions = {
-						// 整轮取消立即停止；搜索自身超时按不可用继续本轮。
-						signal: deadlineController.signal,
+						// 整轮取消或被替代立即停止；搜索自身超时按不可用继续本轮。
+						signal: runSignal,
 						timeoutMs: searchTimeoutMs
 					};
 					const cachedClues = searchCache?.get(caseId, cacheKey, Date.now()) ?? null;
@@ -811,10 +854,16 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 	function clearSettledFlight(
 		caseId: string,
 		state: CaseFlightState,
-		promise: Promise<GuidanceRunResult>
+		promise: Promise<GuidanceRunResult>,
+		generation: number
 	): void {
 		const clear = () => {
-			if (state.activePromise === promise && state.queuedPromise === null) {
+			// 以单调 generation 校验所有权：旧 promise 的 finally 不得删除新一轮的状态。
+			if (
+				state.activeGeneration === generation &&
+				state.activePromise === promise &&
+				state.queuedPromise === null
+			) {
 				inFlight.delete(caseId);
 			}
 		};
@@ -827,16 +876,19 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 		runId: string,
 		requestedAt: number
 	): Promise<GuidanceRunResult> {
-		const promise = execute(caseId, runId, requestedAt);
+		const controller = new AbortController();
+		const promise = execute(caseId, runId, requestedAt, controller);
 		const state: CaseFlightState = {
 			activeRevision: contextRevision,
 			activeRunId: runId,
 			activePromise: promise,
+			activeController: controller,
+			activeGeneration: nextGeneration(),
 			queuedRunId: null,
 			queuedPromise: null
 		};
 		inFlight.set(caseId, state);
-		clearSettledFlight(caseId, state, promise);
+		clearSettledFlight(caseId, state, promise, state.activeGeneration);
 		return promise;
 	}
 
@@ -848,23 +900,48 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 	): Promise<GuidanceRunResult> {
 		if (state.queuedPromise) return state.queuedPromise;
 		const predecessor = state.activePromise;
+		const generation = nextGeneration();
+		const queuedController = new AbortController();
+		// 排队中的运行也先建立进度条目：runId 返回后立即可查询，不会 404。
+		progressByRun.set(runId, {
+			runId,
+			caseId,
+			contextRevision: repository.getCaseContext(caseId).contextRevision,
+			phase: 'thinking',
+			steps: [
+				{
+					index: 1,
+					phase: 'thinking',
+					detail: '已排队：等待上一轮整理结束后立即开始',
+					atMs: 0
+				}
+			],
+			elapsedMs: 0,
+			done: false,
+			result: null,
+			retainUntil: null,
+			startedAt: now()
+		});
 		const startLatest = () => {
 			state.activeRevision = repository.getCaseContext(caseId).contextRevision;
 			state.activeRunId = runId;
 			state.activePromise = queuedPromise;
+			state.activeController = queuedController;
+			state.activeGeneration = generation;
 			state.queuedRunId = null;
 			state.queuedPromise = null;
-			return execute(caseId, runId, requestedAt);
+			return execute(caseId, runId, requestedAt, queuedController);
 		};
 		const queuedPromise = predecessor.then(startLatest, startLatest);
 		state.queuedPromise = queuedPromise;
-		clearSettledFlight(caseId, state, queuedPromise);
+		clearSettledFlight(caseId, state, queuedPromise, generation);
 		return queuedPromise;
 	}
 
 	/**
 	 * 单案例串行调度。返回 runId 供轮询定位本轮进度：
 	 * 复用在飞运行时返回既有 runId，排队时返回将要执行那一轮的 runId。
+	 * 更新后的 contextRevision 会取消旧运行（本地结算后启动新运行，不等待远端清理）。
 	 */
 	function schedule(caseId: string): { runId: string; promise: Promise<GuidanceRunResult> } {
 		const requestedAt = now();
@@ -880,6 +957,9 @@ export function createGuidanceRuntime(dependencies: GuidanceRuntimeDependencies)
 		if (state.activeRevision === requestedRevision) {
 			return { runId: state.activeRunId, promise: state.activePromise };
 		}
+		// 新版输入到达：取消旧 controller；旧运行在本地完成终态结算（写 superseded 事件）
+		// 后新运行立即启动，不等待长时间远端 session 清理。
+		state.activeController?.abort(new DOMException('已由更新后的整理替代', 'AbortError'));
 		const runId = randomUUID();
 		state.queuedRunId = runId;
 		return { runId, promise: queueLatestFlight(caseId, state, runId, requestedAt) };

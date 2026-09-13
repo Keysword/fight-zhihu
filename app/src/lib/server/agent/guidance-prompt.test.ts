@@ -182,3 +182,70 @@ describe('guidance prompt', () => {
 		expect(buildGuidanceMessages).toBeTypeOf('function');
 	});
 });
+
+describe('guidance prompt deterministic deduplication', () => {
+	it('strips transport-only fields from persisted inputs', () => {
+		const base = context();
+		base.inputs = [
+			{
+				id: 'input-1',
+				caseId: 'case-1',
+				contextRevision: 2,
+				kind: 'correction',
+				content: '不能直接联系物业。',
+				guidanceId: null,
+				requestId: '0e2c1a26-6e5a-4c1a-9d3f-0a2b3c4d5e6f',
+				createdAt: '2026-09-13T00:00:00.000Z'
+			}
+		];
+		const serialized = buildGuidanceMessages(base).map((m) => m.content).join('\n');
+		expect(serialized).toContain('不能直接联系物业。');
+		expect(serialized).not.toContain('requestId');
+		expect(serialized).not.toContain('0e2c1a26');
+		expect(serialized).not.toContain('createdAt');
+	});
+
+	it('deduplicates inputs by id without dropping user content', () => {
+		const base = context();
+		const input = {
+			id: 'input-1',
+			caseId: 'case-1',
+			contextRevision: 2,
+			kind: 'constraint' as const,
+			content: '今晚必须决定是否带全部行李。',
+			guidanceId: null,
+			requestId: '0e2c1a26-6e5a-4c1a-9d3f-0a2b3c4d5e6f',
+			createdAt: '2026-09-13T00:00:00.000Z'
+		};
+		base.inputs = [input, { ...input }];
+		const serialized = buildGuidanceMessages(base).map((m) => m.content).join('\n');
+		expect(serialized.match(/今晚必须决定是否带全部行李。/g)).toHaveLength(1);
+	});
+
+	it('passes guidance referenced by priorGuidance only once', () => {
+		const base = context();
+		base.priorGuidance = { id: 'g-1', contextRevision: 3, draft: priorDraft() };
+		base.referencedGuidance = [
+			{ id: 'g-1', contextRevision: 3, draft: priorDraft() },
+			{ id: 'g-2', contextRevision: 1, draft: priorDraft('更早的一版。') }
+		];
+		const serialized = buildGuidanceMessages(base).map((m) => m.content).join('\n');
+		// g-1 只出现在“上一版指导”分栏；g-2 保留在被引用分栏。
+		const priorSection = serialized.split('【被本轮输入引用的历史指导')[0];
+		const referencedSection = serialized.split('【被本轮输入引用的历史指导')[1];
+		expect(priorSection).toContain('g-1');
+		expect(referencedSection).not.toContain('"id":"g-1"');
+		expect(referencedSection).toContain('g-2');
+	});
+
+	it('deduplicates repeated references to the same historical guidance', () => {
+		const base = context();
+		base.priorGuidance = null;
+		base.referencedGuidance = [
+			{ id: 'g-2', contextRevision: 1, draft: priorDraft() },
+			{ id: 'g-2', contextRevision: 1, draft: priorDraft() }
+		];
+		const serialized = buildGuidanceMessages(base).map((m) => m.content).join('\n');
+		expect(serialized.match(/"id":"g-2"/g)).toHaveLength(1);
+	});
+});

@@ -348,9 +348,29 @@ function createOpenCodeModelClient(
 				throw failure;
 			}
 
-			// 会话清理有独立截止时间：取消的调用仍要释放会话，但清理失败绝不改写原始失败原因。
-			// 观测在清理完成后发出，使 sessionCleanupMs 进入同一条观测记录。
+			// 会话清理是独立的有界后台 best effort：完成或取消的调用立即返回，
+			// 新运行不必等待远端 session 删除；清理耗时不阻塞调用，而是通过
+			// 延迟观测（再次回调 onObservation，携带 sessionCleanupMs）单独记录。
+			const releaseSessionInBackground = (): void => {
+				const cleanupStartedAt = now();
+				void (async () => {
+					try {
+						await fetchImpl(`${origin}/session/${session.id}`, {
+							method: 'DELETE',
+							headers,
+							signal: AbortSignal.timeout(SESSION_CLEANUP_TIMEOUT_MS)
+						});
+					} catch {
+						// A leaked short-lived inference session must not mask a valid model response.
+					}
+				})().finally(() => {
+					sessionCleanupMs = Math.round(now() - cleanupStartedAt);
+					// 延迟观测：携带 sessionCleanupMs，供 runtime 合并进既有 attempt 记录。
+					emitObservation(lastFailure);
+				});
+			};
 			let content: string;
+			let lastFailure: ModelClientError | null = null;
 			try {
 				const system = messages.find((message) => message.role === 'system')?.content ?? '';
 				const conversation = messages
@@ -394,37 +414,18 @@ function createOpenCodeModelClient(
 				}
 				content = candidate;
 			} catch (error) {
-				const failure =
+				lastFailure =
 					error instanceof ModelClientError
 						? error
 						: new ModelClientError('通用 Agent 服务返回了无法解析的数据', { reason: 'payload' });
-				const cleanupStartedAt = now();
-				try {
-					await fetchImpl(`${origin}/session/${session.id}`, {
-						method: 'DELETE',
-						headers,
-						signal: AbortSignal.timeout(SESSION_CLEANUP_TIMEOUT_MS)
-					});
-				} catch {
-					// A leaked short-lived inference session must not mask a valid model response.
-				}
-				sessionCleanupMs = Math.round(now() - cleanupStartedAt);
-				emitObservation(failure);
-				throw failure;
+				outputCharacters = 0;
+				emitObservation(lastFailure);
+				releaseSessionInBackground();
+				throw lastFailure;
 			}
-			const cleanupStartedAt = now();
-			try {
-				await fetchImpl(`${origin}/session/${session.id}`, {
-					method: 'DELETE',
-					headers,
-					signal: AbortSignal.timeout(SESSION_CLEANUP_TIMEOUT_MS)
-				});
-			} catch {
-				// A leaked short-lived inference session must not mask a valid model response.
-			}
-			sessionCleanupMs = Math.round(now() - cleanupStartedAt);
 			outputCharacters = content.length;
 			emitObservation(null);
+			releaseSessionInBackground();
 			return content;
 		}
 	};

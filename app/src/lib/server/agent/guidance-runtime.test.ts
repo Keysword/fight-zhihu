@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -1140,5 +1141,142 @@ describe('guidance runtime search cache', () => {
 			kind: 'external',
 			id: clueItem.id
 		});
+	});
+});
+
+describe('guidance runtime supersede scheduling', () => {
+	it('cancels the in-flight model call when a new input arrives, without waiting for it', async () => {
+		const repo = repository();
+		const created = createCase(repo);
+		let abortedOldCall = false;
+		let calls = 0;
+		const runtime = createGuidanceRuntime({
+			repository: repo,
+			model: {
+				complete: (_messages, options) => {
+					calls += 1;
+					const callNumber = calls;
+					return new Promise<string>((resolve) => {
+						const timer = setTimeout(
+							() => resolve(provide(draft({ summary: `第 ${callNumber} 轮的整理结果` }))),
+							400
+						);
+						options?.signal?.addEventListener('abort', () => {
+							abortedOldCall = true;
+							clearTimeout(timer);
+							// 模拟无视取消：再晚一点才“迟到”返回旧正文。
+							setTimeout(() => resolve(provide(draft({ summary: `第 ${callNumber} 轮的整理结果` }))), 150);
+						});
+					});
+				}
+			},
+			zhihu: zhihuClient()
+		});
+
+		const first = runtime.start(created.id);
+		expect(first.reused).toBe(false);
+		// 新输入 → contextRevision 提升 → 调度替代旧运行。
+		repo.appendCaseInput(created.id, {
+			kind: 'context',
+			content: '补充：今天 18 点前必须有结论。',
+			guidanceId: null,
+			requestId: randomUUID()
+		});
+		const second = runtime.start(created.id);
+		expect(second.reused).toBe(false);
+		const result = await runtime.run(created.id);
+		expect(result.outcome).toBe('ready');
+		expect(result.guidance?.draft.understanding.summary).toBe('第 2 轮的整理结果');
+		expect(abortedOldCall).toBe(true);
+		// 旧运行的迟到正文不能覆盖新版指导。
+		await new Promise((resolveWait) => setTimeout(resolveWait, 300));
+		expect(repo.getCurrentGuidance(created.id)?.draft.understanding.summary).toBe(
+			'第 2 轮的整理结果'
+		);
+		const oldFinished = repo
+			.listEvents(created.id)
+			.filter((event) => event.type === 'guidance.run.finished')
+			.filter((event) => (event.payload as { runId?: string }).runId === first.runId);
+		expect(oldFinished).toHaveLength(1);
+		expect((oldFinished[0].payload as { outcome: string }).outcome).toBe('superseded');
+		// 旧运行结束前就能查询其进度（排队/取消状态不返回 404）。
+		expect(runtime.progress(created.id, second.runId)).not.toBeNull();
+	});
+
+	it('runs the queued revision only once for three consecutive new inputs', async () => {
+		const repo = repository();
+		const created = createCase(repo);
+		let calls = 0;
+		const runtime = createGuidanceRuntime({
+			repository: repo,
+			model: {
+				complete: (_messages, options) => {
+					calls += 1;
+					return new Promise<string>((resolve, reject) => {
+						const timer = setTimeout(() => resolve(provide(draft({ summary: `第 ${calls} 轮` }))), 250);
+						options?.signal?.addEventListener('abort', () => {
+							clearTimeout(timer);
+							reject(new ModelClientError('本轮指导请求已取消', { reason: 'cancelled' }));
+						});
+					});
+				}
+			},
+			zhihu: zhihuClient()
+		});
+
+		runtime.start(created.id);
+		repo.appendCaseInput(created.id, {
+			kind: 'context',
+			content: '输入 2',
+			guidanceId: null,
+			requestId: randomUUID()
+		});
+		const queued = runtime.start(created.id);
+		repo.appendCaseInput(created.id, {
+			kind: 'context',
+			content: '输入 3',
+			guidanceId: null,
+			requestId: randomUUID()
+		});
+		// 第三个 revision 复用同一个排队运行；该运行启动时读取最新 revision。
+		const again = runtime.start(created.id);
+		expect(again.runId).toBe(queued.runId);
+		const result = await runtime.run(created.id);
+		expect(result.outcome).toBe('ready');
+		expect(result.guidance?.draft.understanding.summary).toBe('第 2 轮');
+		// 挂起的第 1 轮 + 最后执行的第 2 轮：不再为中间 revision 额外推理。
+		expect(calls).toBe(2);
+		const finished = repo
+			.listEvents(created.id)
+			.filter((event) => event.type === 'guidance.run.finished');
+		expect(finished).toHaveLength(2);
+		expect(finished.map((event) => (event.payload as { outcome: string }).outcome)).toEqual([
+			'superseded',
+			'ready'
+		]);
+	});
+
+	it('reuses the active run for repeated requests at the same revision', async () => {
+		const repo = repository();
+		const created = createCase(repo);
+		let calls = 0;
+		const runtime = createGuidanceRuntime({
+			repository: repo,
+			model: {
+				complete: () => {
+					calls += 1;
+					return new Promise<string>((resolve) => {
+						setTimeout(() => resolve(provide(draft({ sources: [] }))), 30);
+					});
+				}
+			},
+			zhihu: zhihuClient()
+		});
+		const first = runtime.start(created.id);
+		const second = runtime.start(created.id);
+		expect(second.runId).toBe(first.runId);
+		expect(second.reused).toBe(true);
+		await runtime.run(created.id);
+		expect(calls).toBe(1);
 	});
 });

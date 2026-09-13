@@ -71,15 +71,12 @@ function projectEvidence(evidence: Evidence) {
 }
 
 function projectInput(input: CaseInput) {
+	// 只保留模型需要的字段；requestId/createdAt 等传输字段不进入上下文。
 	return {
 		id: input.id,
-		caseId: input.caseId,
-		contextRevision: input.contextRevision,
 		kind: input.kind,
 		content: input.content,
-		guidanceId: input.guidanceId,
-		requestId: input.requestId,
-		createdAt: input.createdAt
+		guidanceId: input.guidanceId
 	};
 }
 
@@ -114,13 +111,25 @@ export function buildGuidanceMessages(context: GuidancePromptContext): ModelMess
 		confusion: context.case.confusion,
 		contextRevision: context.case.contextRevision
 	};
+	// 确定性去重：同一输入 id 只出现一次，不删除任何正文或引用关系。
+	const dedupedInputs = [
+		...new Map(context.inputs.map((input) => [input.id, input])).values()
+	];
+	// 上一版指导若同时被本轮输入引用，只保留 priorGuidance 一处，不重复传输。
+	const priorId = context.priorGuidance?.id ?? null;
+	const seenReferenced = new Set<string>();
+	const dedupedReferenced = context.referencedGuidance.filter((guidance) => {
+		if (guidance.id === priorId || seenReferenced.has(guidance.id)) return false;
+		seenReferenced.add(guidance.id);
+		return true;
+	});
 	const sections = [
 		`【案例目标与困惑】\n${JSON.stringify(safeCase)}`,
 		`【用户原始材料】\n${JSON.stringify(context.evidence.map(projectEvidence))}`,
-		`【持久化用户输入】\n${JSON.stringify(context.inputs.map(projectInput))}`,
+		`【持久化用户输入】\n${JSON.stringify(dedupedInputs.map(projectInput))}`,
 		`【本轮外部线索】（仅供启发）\n${JSON.stringify(context.externalClues.map(projectExternalClue))}`,
 		`【上一版指导：可修正的模型输出】\n${JSON.stringify(context.priorGuidance ? projectPriorGuidance(context.priorGuidance) : null)}`,
-		`【被本轮输入引用的历史指导：可修正的模型输出】\n${JSON.stringify(context.referencedGuidance.map(projectPriorGuidance))}`
+		`【被本轮输入引用的历史指导：可修正的模型输出】\n${JSON.stringify(dedupedReferenced.map(projectPriorGuidance))}`
 	];
 
 	return [
