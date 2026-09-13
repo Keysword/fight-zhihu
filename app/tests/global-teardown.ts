@@ -12,8 +12,11 @@ const PREFIX = 'background-board-e2e-';
  * 也不用环境变量向 teardown 传路径——实测 teardown 进程里该变量为空。
  */
 export default function globalTeardown(config: FullConfig): void {
-	const directory = (config.metadata as { e2eDataDirectory?: string }).e2eDataDirectory;
-	// 双重保险：只接受自己创建的那类路径，避免配置被改动后误删其它目录。
-	if (!directory || !directory.includes(PREFIX)) return;
-	rmSync(directory, { recursive: true, force: true });
+	const directories =
+		(config.metadata as { e2eDataDirectories?: string[] }).e2eDataDirectories ?? [];
+	for (const directory of directories) {
+		// 双重保险：只接受自己创建的那类路径，避免配置被改动后误删其它目录。
+		if (!directory.includes(PREFIX)) continue;
+		rmSync(directory, { recursive: true, force: true });
+	}
 }

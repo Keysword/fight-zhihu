@@ -654,4 +654,60 @@ describe('case service', () => {
 		).toHaveLength(1);
 		repository.close();
 	});
+
+	it('round-trips legacy boards and guided records through the same database', async () => {
+		const { repository, legacyRunner, guidanceRunner, service: legacyService } = setup('legacy');
+		const legacyDemo = await legacyService.createDemo();
+		const caseId = legacyDemo.case.id;
+		const legacyBoard = legacyDemo.case.board;
+		expect(legacyBoard).not.toBeNull();
+		if (!legacyBoard) throw new Error('legacy demo did not create a board');
+		repository.stageBoardProposal(caseId, legacyDemo.case.revision, {
+			...legacyBoard,
+			currentBlocker: '旧模式中尚待确认的更新'
+		});
+
+		const serviceWithMode = (guidanceMode: boolean) =>
+			createCaseService({
+				repository,
+				runner: legacyRunner,
+				guidanceRunner,
+				configuration: {
+					guidanceMode,
+					modelConfigured: true,
+					zhihuConfigured: true,
+					version: 'test'
+				}
+			});
+		const guidedService = serviceWithMode(true);
+		const beforeGuidance = guidedService.getCase(caseId);
+		expect(beforeGuidance).toMatchObject({
+			mode: 'guided',
+			case: {
+				board: { currentBlocker: legacyBoard.currentBlocker },
+				pendingBoard: { currentBlocker: '旧模式中尚待确认的更新' }
+			}
+		});
+
+		guidedService.appendCaseInput(caseId, {
+			kind: 'correction',
+			content: '这条纠正需要跨模式保留',
+			guidanceId: null,
+			requestId: crypto.randomUUID()
+		});
+		await guidedService.runGuidance(caseId);
+
+		const legacyAgain = serviceWithMode(false).getCase(caseId);
+		expect(legacyAgain).toMatchObject({
+			mode: 'legacy',
+			case: {
+				board: { currentBlocker: legacyBoard.currentBlocker },
+				pendingBoard: { currentBlocker: '旧模式中尚待确认的更新' }
+			},
+			inputs: [{ content: '这条纠正需要跨模式保留' }],
+			guidance: { draft: { understanding: { summary: '先核实负责方，再决定行动' } } }
+		});
+		expect(legacyAgain.guidanceHistory).toHaveLength(1);
+		repository.close();
+	});
 });
