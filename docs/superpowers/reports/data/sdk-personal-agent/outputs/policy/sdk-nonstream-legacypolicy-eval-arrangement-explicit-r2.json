@@ -1,0 +1,27 @@
+{
+  "understanding": {
+    "summary": "房间号和领取钥匙的时间、地点都已明确。你预计17:20到达，在09:00—18:00的领取窗口内，可以直接按时办理入住。",
+    "openPoint": null,
+    "sources": [
+      {
+        "kind": "evidence",
+        "id": "b1dec299-1c25-4fd6-86da-5537b9127d84"
+      },
+      {
+        "kind": "input",
+        "id": "38a7da6c-cfaa-4d9f-933a-0fb3c8ecbcb1"
+      }
+    ]
+  },
+  "communicationChecks": [],
+  "nextStep": {
+    "kind": "inspect",
+    "instruction": "确认自己的身份证随身携带，并按预计时间前往3号楼前台。",
+    "why": "你的到达时间在领取窗口内，无需调整行程，直接按通知办理即可。",
+    "contact": null,
+    "message": null,
+    "branches": []
+  },
+  "question": null,
+  "changeSummary": null
+}

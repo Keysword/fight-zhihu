@@ -1,0 +1,54 @@
+{
+  "understanding": {
+    "summary": "目前只确认了对方会代为申请，并说明明天有人接，但宿舍是否已分配、入住安排是否落实仍不明确。",
+    "openPoint": "是否已有明确房间号和入住确认，尚无材料支持。",
+    "sources": [
+      {
+        "kind": "evidence",
+        "id": "0112c952-f9b0-4404-ba7e-d48b5a58cc89"
+      }
+    ]
+  },
+  "communicationChecks": [
+    {
+      "observation": "材料中提到会代申请及明天有人接，但未给出房间号或入住确认。",
+      "possibleMisreading": "可能被理解为住宿已完全安排妥当。",
+      "whyItMatters": "影响用户是否需要准备到达后的临时安排。",
+      "howToCheck": "查看是否收到后续通知，确认房间号和领钥匙时间。",
+      "sources": [
+        {
+          "kind": "evidence",
+          "id": "0112c952-f9b0-4404-ba7e-d48b5a58cc89"
+        }
+      ]
+    }
+  ],
+  "nextStep": {
+    "kind": "contact",
+    "instruction": "请已有对接人确认明天是否已有明确房间号和入住安排。",
+    "why": "避免到达后才发现只是申请代办，无法入住。",
+    "contact": {
+      "label": "部门对接人",
+      "basis": "case_material",
+      "sources": [
+        {
+          "kind": "evidence",
+          "id": "0112c952-f9b0-4404-ba7e-d48b5a58cc89"
+        }
+      ]
+    },
+    "message": "确认一下明天到达后的住宿安排：目前是否已有房间号和领钥匙时间？如果不是您负责，能否告知负责确认该事项的人？",
+    "branches": [
+      {
+        "when": "收到明确房间和时间",
+        "then": "核对到达时间是否赶得上领取窗口。"
+      },
+      {
+        "when": "仍无明确确认",
+        "then": "可能需准备临时住宿或调整行程。"
+      }
+    ]
+  },
+  "question": null,
+  "changeSummary": null
+}

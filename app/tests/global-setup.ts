@@ -21,6 +21,9 @@ const isolatedEnvironment = {
 	AGENT_API_URL: '',
 	AGENT_API_KEY: '',
 	AGENT_MODEL: '',
+	AGENT_TRANSPORT: '',
+	AGENT_SDK_BASE_URL: '',
+	AGENT_SDK_STREAM: '',
 	OPENCODE_SERVER_USERNAME: '',
 	OPENCODE_SERVER_PASSWORD: '',
 	OPENCODE_SERVER_URL: '',
@@ -114,8 +117,10 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
 	writeFileSync(join(runDirectory, OWNERSHIP_MARKER), ownershipToken, { flag: 'wx' });
 	const legacyDataDirectory = join(runDirectory, 'legacy');
 	const guidedDataDirectory = join(runDirectory, 'guided');
+	const guidedSdkDataDirectory = join(runDirectory, 'guided-sdk');
 	mkdirSync(legacyDataDirectory);
 	mkdirSync(guidedDataDirectory);
+	mkdirSync(guidedSdkDataDirectory);
 
 	const children: ChildProcess[] = [];
 	const cleanup = async () => {
@@ -154,11 +159,32 @@ export default async function globalSetup(): Promise<() => Promise<void>> {
 				AGENT_API_URL: 'http://127.0.0.1:4789/v1/chat/completions',
 				AGENT_MODEL: 'scripted-guidance-e2e',
 				BACKGROUND_BOARD_DATA_DIR: guidedDataDirectory,
-				BACKGROUND_BOARD_GUIDANCE_V2: '1'
+				BACKGROUND_BOARD_GUIDANCE_V2: '1',
+				GUIDANCE_RUN_RATE_LIMIT: '100'
 			})
 		);
 		children.push(guided);
 		await waitUntilReady(guided, 'http://127.0.0.1:4174/background-board/api/health');
+
+		const guidedSdk = run(
+			process.execPath,
+			['build/index.js'],
+			childEnvironment({
+				HOST: '127.0.0.1',
+				PORT: '4175',
+				ORIGIN: 'http://127.0.0.1:4175',
+				AGENT_TRANSPORT: 'sdk',
+				AGENT_SDK_BASE_URL: 'http://127.0.0.1:4789/v1',
+				AGENT_SDK_STREAM: '1',
+				AGENT_API_KEY: 'scripted-e2e-key',
+				AGENT_MODEL: 'scripted-guidance-e2e',
+				BACKGROUND_BOARD_DATA_DIR: guidedSdkDataDirectory,
+				BACKGROUND_BOARD_GUIDANCE_V2: '1',
+				GUIDANCE_RUN_RATE_LIMIT: '100'
+			})
+		);
+		children.push(guidedSdk);
+		await waitUntilReady(guidedSdk, 'http://127.0.0.1:4175/background-board/api/health');
 		return cleanup;
 	} catch (error) {
 		await cleanup();

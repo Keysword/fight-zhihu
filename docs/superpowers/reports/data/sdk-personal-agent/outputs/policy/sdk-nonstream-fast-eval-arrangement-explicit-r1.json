@@ -1,0 +1,27 @@
+{
+  "understanding": {
+    "summary": "房间已确定为 3 号楼 412，明天 09:00—18:00 可在前台凭身份证领钥匙，且预计 17:20 到达，在领取窗口内。",
+    "openPoint": null,
+    "sources": [
+      {
+        "kind": "evidence",
+        "id": "d1d6d689-ccd2-437f-a561-b8a2f5958015"
+      },
+      {
+        "kind": "input",
+        "id": "4bab13c7-6bb7-4261-9445-297e3b6316f7"
+      }
+    ]
+  },
+  "communicationChecks": [],
+  "nextStep": {
+    "kind": "inspect",
+    "instruction": "到达后直接前往 3 号楼前台，持身份证领取 412 房间钥匙。",
+    "why": "到达时间 17:20 早于 18:00 截止，可正常办理入住。",
+    "contact": null,
+    "message": null,
+    "branches": []
+  },
+  "question": null,
+  "changeSummary": null
+}

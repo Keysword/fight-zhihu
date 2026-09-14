@@ -1,0 +1,41 @@
+{
+  "understanding": {
+    "summary": "目前只有通知短信告知携带身份证到园区服务中心办理入住手续，钥匙领取的具体流程尚不明确。",
+    "openPoint": "知乎上是否有相关经验分享暂未查到，钥匙领取的具体步骤和地点不清楚。",
+    "sources": [
+      {
+        "kind": "evidence",
+        "id": "f2ef8765-100a-4207-9aa4-e5435a015b5f"
+      }
+    ]
+  },
+  "communicationChecks": [],
+  "nextStep": {
+    "kind": "contact",
+    "instruction": "携带身份证前往园区服务中心办理入住时，直接向工作人员询问钥匙领取的具体步骤。",
+    "why": "这是最直接的确认方式，能当场解决疑虑并完成办理。",
+    "contact": {
+      "label": "园区服务中心工作人员",
+      "basis": "case_material",
+      "sources": [
+        {
+          "kind": "evidence",
+          "id": "f2ef8765-100a-4207-9aa4-e5435a015b5f"
+        }
+      ]
+    },
+    "message": "您好，我今天来办理入住，请问钥匙是在这里领取吗？需要什么额外手续吗？",
+    "branches": [
+      {
+        "when": "工作人员告知具体流程",
+        "then": "按指引领取钥匙。"
+      },
+      {
+        "when": "工作人员表示钥匙需在其他地点领取",
+        "then": "请对方提供具体地点和指引。"
+      }
+    ]
+  },
+  "question": null,
+  "changeSummary": "外部搜索不可用，未获取知乎经验；改建议从园区服务中心直接咨询，作为最可靠入口。"
+}

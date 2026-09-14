@@ -1,0 +1,36 @@
+{
+  "understanding": {
+    "summary": "房间号、领取地点和时间均已明确，且预计到达时间在领取窗口内。",
+    "openPoint": null,
+    "sources": [
+      {
+        "kind": "evidence",
+        "id": "aaeebb51-414b-46f4-855b-95f204ce85f3"
+      },
+      {
+        "kind": "input",
+        "id": "507c0eb6-a7e7-4c91-bad4-c72e4939853b"
+      }
+    ]
+  },
+  "communicationChecks": [],
+  "nextStep": {
+    "kind": "inspect",
+    "instruction": "确认在 17:20 到达后，是否能在 18:00 前完成持身份证到 3 号楼前台领取钥匙的步骤。",
+    "why": "预计到达时间 17:20 距离截止 18:00 仅剩 40 分钟，需评估交通、排队等可能的耗时，避免错过领取。",
+    "contact": null,
+    "message": null,
+    "branches": [
+      {
+        "when": "到达时间可能超过 18:00",
+        "then": "提前联系住宿中心，说明情况并询问是否可延迟领取或安排其他取钥匙方式。"
+      },
+      {
+        "when": "到达后时间充裕",
+        "then": "直接持身份证到 3 号楼前台领取钥匙，然后前往 412 房间。"
+      }
+    ]
+  },
+  "question": null,
+  "changeSummary": null
+}

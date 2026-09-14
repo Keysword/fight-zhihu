@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -8,6 +9,7 @@ import type { ExternalClue } from '$lib/domain/types';
 import { createCaseRepository, type CaseRepository } from '$lib/server/cases/repository';
 import { ModelClientError, type ModelClient, type ModelMessage } from './model-client';
 import { createGuidanceRuntime } from './guidance-runtime';
+import { createSearchCache } from './search-cache';
 
 function timeoutError(): ModelClientError {
 	return new ModelClientError('Agent 模型响应超时', { reason: 'timeout' });
@@ -806,5 +808,489 @@ describe('guidance runtime', () => {
 		expect(result.guidance?.completeness).toBe('minimal');
 		expect(result.guidance?.draft.understanding.summary).toBe('只保留了理解。');
 		expect(result.guidance?.dropped.length).toBeGreaterThan(0);
+	});
+});
+
+describe('guidance runtime model observations', () => {
+	it('records transport observations per attempt on success and failure without leaking content', async () => {
+		const repo = repository();
+		const created = createCase(repo);
+		const actions = [
+			JSON.stringify({ type: 'provide_guidance', guidance: draft({ sources: [] }) })
+		];
+		let calls = 0;
+		const model: ModelClient = {
+			async complete(messages, options) {
+				calls += 1;
+				const failure = new ModelClientError('Agent 模型请求失败（HTTP 503）', {
+					reason: 'http',
+					status: 503
+				});
+				if (calls === 1) {
+					options?.onObservation?.({
+						transport: 'sdk',
+						durationMs: 120,
+						firstContentMs: null,
+						inputCharacters: messages.reduce((total, message) => total + message.content.length, 0),
+						outputCharacters: 0,
+						inputTokens: null,
+						outputTokens: null,
+						reasoningTokens: null,
+						finishReason: null
+					});
+					throw failure;
+				}
+				options?.onObservation?.({
+					transport: 'sdk',
+					durationMs: 800,
+					firstContentMs: 90,
+					inputCharacters: 40,
+					outputCharacters: actions[0].length,
+					inputTokens: 12,
+					outputTokens: 30,
+					reasoningTokens: null,
+					finishReason: 'stop'
+				});
+				return actions[0];
+			}
+		};
+
+		const result = await createGuidanceRuntime({
+			repository: repo,
+			model,
+			zhihu: zhihuClient(),
+			maxModelRetries: 2
+		}).run(created.id);
+
+		expect(result.outcome).toBe('ready');
+		const finished = finishedEvents(repo, created.id);
+		expect(finished).toHaveLength(1);
+		const payload = finished[0].payload as {
+			queueMs: number;
+			requestedAt: number;
+			modelCalls: Array<Record<string, unknown>>;
+		};
+		expect(payload.queueMs).toBe(0);
+		expect(typeof payload.requestedAt).toBe('number');
+		expect(payload.modelCalls).toHaveLength(2);
+		const [failedAttempt, okAttempt] = payload.modelCalls;
+		expect(failedAttempt).toMatchObject({
+			ok: false,
+			retryReason: 'http',
+			transport: 'sdk',
+			outputCharacters: 0
+		});
+		expect(okAttempt).toMatchObject({
+			ok: true,
+			transport: 'sdk',
+			firstContentMs: 90,
+			inputTokens: 12,
+			outputTokens: 30,
+			finishReason: 'stop'
+		});
+		// 观测数据只含计数与耗时，不含 prompt、密钥或完整模型输出。
+		const serialised = JSON.stringify(payload);
+		expect(serialised).not.toContain(actions[0]);
+		expect(serialised).not.toContain('Agent 模型请求失败');
+	});
+
+	it('records a positive queue wait when execution starts after the request', async () => {
+		const repo = repository();
+		const created = createCase(repo);
+		let monotonic = 1_000;
+		const model = scriptedModel([provide(draft({ sources: [] }))]);
+		const result = await createGuidanceRuntime({
+			repository: repo,
+			model,
+			zhihu: zhihuClient(),
+			now: () => (monotonic += 250)
+		}).run(created.id);
+
+		expect(result.outcome).toBe('ready');
+		const payload = finishedEvents(repo, created.id)[0].payload as {
+			queueMs: number;
+			requestedAt: number;
+			totalMs: number;
+		};
+		// requestedAt 是调度时刻（首个 now() 读数），execute 随后启动，queueMs 不再是 0。
+		expect(payload.requestedAt).toBe(1_250);
+		expect(payload.queueMs).toBeGreaterThan(0);
+		expect(payload.totalMs).toBeGreaterThanOrEqual(payload.queueMs);
+	});
+});
+
+describe('guidance runtime fast policy', () => {
+	it('retries a fast 503 once with the fixed backoff and then succeeds', async () => {
+		const repo = repository();
+		const created = createCase(repo);
+		let calls = 0;
+		const sleeps: number[] = [];
+		const model: ModelClient = {
+			async complete() {
+				calls += 1;
+				if (calls === 1) {
+					throw new ModelClientError('Agent 模型请求失败（HTTP 503）', {
+						reason: 'http',
+						status: 503
+					});
+				}
+				return provide(draft({ sources: [] }));
+			}
+		};
+		const result = await createGuidanceRuntime({
+			repository: repo,
+			model,
+			zhihu: zhihuClient(),
+			policyMode: 'fast',
+			maxModelRetries: 1,
+			runBudgetMs: 60_000,
+			sleep: async (durationMs) => {
+				sleeps.push(durationMs);
+			}
+		}).run(created.id);
+		expect(result.outcome).toBe('ready');
+		expect(calls).toBe(2);
+		expect(sleeps).toEqual([200]);
+	});
+
+	it('does not retry a timeout or a cancellation in fast mode', async () => {
+		for (const failure of [timeoutError(), new ModelClientError('取消', { reason: 'cancelled' })]) {
+			const repo = repository();
+			const created = createCase(repo);
+			let calls = 0;
+			const model: ModelClient = {
+				async complete() {
+					calls += 1;
+					throw failure;
+				}
+			};
+			const result = await createGuidanceRuntime({
+				repository: repo,
+				model,
+				zhihu: zhihuClient(),
+				policyMode: 'fast',
+				maxModelRetries: 1
+			}).run(created.id);
+			expect(result.outcome).toBe('failed');
+			expect(calls).toBe(1);
+		}
+	});
+
+	it('reports budget exhaustion when the deadline aborts a hanging model call', async () => {
+		const repo = repository();
+		const created = createCase(repo);
+		const model: ModelClient = {
+			// 模型永不返回；整轮截止信号触发后按取消结束。
+			complete(_messages, options) {
+				return new Promise<string>((_resolve, reject) => {
+					options?.signal?.addEventListener('abort', () => {
+						reject(new ModelClientError('本轮指导请求已取消', { reason: 'cancelled' }));
+					});
+				});
+			}
+		};
+		const result = await createGuidanceRuntime({
+			repository: repo,
+			model,
+			zhihu: zhihuClient(),
+			policyMode: 'fast',
+			runBudgetMs: 80
+		}).run(created.id);
+		expect(result.outcome).toBe('failed');
+		expect(result.error?.code).toBe('TIME_BUDGET_EXCEEDED');
+	});
+
+	it('never writes a late model result that resolves after the deadline', async () => {
+		const repo = repository();
+		const created = createCase(repo);
+		const model: ModelClient = {
+			// 模型无视取消信号，在截止后约 200ms 才迟到返回正文；runtime 必须丢弃。
+			complete() {
+				return new Promise<string>((resolve) => {
+					setTimeout(() => resolve(provide(draft({ sources: [] }))), 280);
+				});
+			}
+		};
+		const result = await createGuidanceRuntime({
+			repository: repo,
+			model,
+			zhihu: zhihuClient(),
+			policyMode: 'fast',
+			runBudgetMs: 80
+		}).run(created.id);
+		expect(result.outcome).toBe('failed');
+		// 迟到的正文到达前运行已经结束；不得保存任何指导。
+		await new Promise((resolvePromise) => setTimeout(resolvePromise, 700));
+		expect(repo.getCurrentGuidance(created.id)).toBeNull();
+	});
+
+	it('prefers salvage over another repair round trip when little time remains', async () => {
+		const repo = repository();
+		const created = createCase(repo);
+		// 疑点块不合规范但理解部分可抢救；剩余预算不足时不再多花一次模型调用。
+		const malformed = JSON.stringify({
+			type: 'provide_guidance',
+			guidance: {
+				understanding: { summary: '只保留了理解。', openPoint: null, sources: [] },
+				communicationChecks: [{ bad: 'schema' }],
+				nextStep: null,
+				question: null,
+				changeSummary: null
+			}
+		});
+		let calls = 0;
+		const model: ModelClient = {
+			async complete() {
+				calls += 1;
+				// 第一次回复在约 950ms 到达（预算 1s）：剩余不足 10s，不再修复，直接 salvage。
+				await new Promise((resolveWait) => setTimeout(resolveWait, 950));
+				return malformed;
+			}
+		};
+		const result = await createGuidanceRuntime({
+			repository: repo,
+			model,
+			zhihu: zhihuClient(),
+			policyMode: 'fast',
+			maxModelRetries: 1,
+			runBudgetMs: 1_000
+		}).run(created.id);
+		// 第一次调用耗尽到接近预算尽头，剩余不足 10s：不再修复，直接 salvage 保存理解。
+		expect(calls).toBe(1);
+		expect(result.outcome).toBe('ready');
+		expect(result.guidance?.completeness).toBe('minimal');
+	});
+});
+
+describe('guidance runtime search cache', () => {
+	it('reuses cached clues within the same case and separates cache hits from requests', async () => {
+		const repo = repository();
+		const created = createCase(repo);
+		const clueItem = clue('zhihu-cache-1');
+		const zhihu = zhihuClient([clueItem]);
+		const cache = createSearchCache();
+		const searchAction = JSON.stringify({ type: 'search_zhihu', query: '新人住宿 经验', count: 3 });
+		// 两个独立运行、同一案例：第二次搜索命中缓存，不再发出真实请求。
+		const first = await createGuidanceRuntime({
+			repository: repo,
+			model: scriptedModel([
+				searchAction,
+				provide(draft({ sources: [{ kind: 'external', id: clueItem.id }] }))
+			]),
+			zhihu,
+			searchCache: cache
+		}).run(created.id);
+		const second = await createGuidanceRuntime({
+			repository: repo,
+			model: scriptedModel([
+				searchAction,
+				provide(draft({ sources: [{ kind: 'external', id: clueItem.id }] }))
+			]),
+			zhihu,
+			searchCache: cache
+		}).run(created.id);
+
+		expect(first.outcome).toBe('ready');
+		expect(second.outcome).toBe('ready');
+		expect(zhihu.searchZhihu).toHaveBeenCalledTimes(1);
+		const secondFinished = finishedEvents(repo, created.id).at(-1)?.payload as {
+			searches: Array<{ cacheHit?: boolean }>;
+		};
+		expect(secondFinished.searches[0].cacheHit).toBe(true);
+	});
+
+	it('does not cache unavailable searches and still saves guidance afterwards', async () => {
+		const repo = repository();
+		const created = createCase(repo);
+		const failingZhihu = {
+			searchZhihu: vi.fn(async () => {
+				throw new Error('timeout');
+			}),
+			searchGlobal: vi.fn(async () => [])
+		};
+		const model = scriptedModel([
+			JSON.stringify({ type: 'search_zhihu', query: '新人住宿', count: 3 }),
+			provide(draft({ sources: [] }))
+		]);
+		const cache = createSearchCache();
+		const result = await createGuidanceRuntime({
+			repository: repo,
+			model,
+			zhihu: failingZhihu,
+			searchCache: cache
+		}).run(created.id);
+		expect(result.outcome).toBe('ready');
+		expect(result.guidance).not.toBeNull();
+		// 失败不缓存：缓存里查不到该 key。
+		expect(
+			cache.get(created.id, { source: 'zhihu', query: '新人住宿', count: 3 }, Date.now())
+		).toBeNull();
+	});
+
+	it('keeps cache-registered sources citable in the same run', async () => {
+		const repo = repository();
+		const created = createCase(repo);
+		const clueItem = clue('zhihu-cache-cite');
+		const cache = createSearchCache();
+		cache.set(created.id, { source: 'zhihu', query: '新人住宿', count: 3 }, [clueItem], Date.now());
+		const model = scriptedModel([
+			JSON.stringify({ type: 'search_zhihu', query: '新人住宿', count: 3 }),
+			provide(draft({ sources: [{ kind: 'external', id: clueItem.id }] }))
+		]);
+		const result = await createGuidanceRuntime({
+			repository: repo,
+			model,
+			zhihu: zhihuClient([]),
+			searchCache: cache
+		}).run(created.id);
+		// 缓存命中后在 gatheredClues 注册同一来源，引用校验通过，无需真实请求。
+		expect(result.outcome).toBe('ready');
+		expect(result.guidance?.draft.understanding.sources[0]).toEqual({
+			kind: 'external',
+			id: clueItem.id
+		});
+	});
+});
+
+describe('guidance runtime supersede scheduling', () => {
+	it('cancels the in-flight model call when a new input arrives, without waiting for it', async () => {
+		const repo = repository();
+		const created = createCase(repo);
+		let abortedOldCall = false;
+		let calls = 0;
+		const runtime = createGuidanceRuntime({
+			repository: repo,
+			model: {
+				complete: (_messages, options) => {
+					calls += 1;
+					const callNumber = calls;
+					return new Promise<string>((resolve) => {
+						const timer = setTimeout(
+							() => resolve(provide(draft({ summary: `第 ${callNumber} 轮的整理结果` }))),
+							400
+						);
+						options?.signal?.addEventListener('abort', () => {
+							abortedOldCall = true;
+							clearTimeout(timer);
+							// 模拟无视取消：再晚一点才“迟到”返回旧正文。
+							setTimeout(
+								() => resolve(provide(draft({ summary: `第 ${callNumber} 轮的整理结果` }))),
+								150
+							);
+						});
+					});
+				}
+			},
+			zhihu: zhihuClient()
+		});
+
+		const first = runtime.start(created.id);
+		expect(first.reused).toBe(false);
+		// 新输入 → contextRevision 提升 → 调度替代旧运行。
+		repo.appendCaseInput(created.id, {
+			kind: 'context',
+			content: '补充：今天 18 点前必须有结论。',
+			guidanceId: null,
+			requestId: randomUUID()
+		});
+		const second = runtime.start(created.id);
+		expect(second.reused).toBe(false);
+		const result = await runtime.run(created.id);
+		expect(result.outcome).toBe('ready');
+		expect(result.guidance?.draft.understanding.summary).toBe('第 2 轮的整理结果');
+		expect(abortedOldCall).toBe(true);
+		// 旧运行的迟到正文不能覆盖新版指导。
+		await new Promise((resolveWait) => setTimeout(resolveWait, 300));
+		expect(repo.getCurrentGuidance(created.id)?.draft.understanding.summary).toBe(
+			'第 2 轮的整理结果'
+		);
+		const oldFinished = repo
+			.listEvents(created.id)
+			.filter((event) => event.type === 'guidance.run.finished')
+			.filter((event) => (event.payload as { runId?: string }).runId === first.runId);
+		expect(oldFinished).toHaveLength(1);
+		expect((oldFinished[0].payload as { outcome: string }).outcome).toBe('superseded');
+		// 旧运行结束前就能查询其进度（排队/取消状态不返回 404）。
+		expect(runtime.progress(created.id, second.runId)).not.toBeNull();
+	});
+
+	it('runs the queued revision only once for three consecutive new inputs', async () => {
+		const repo = repository();
+		const created = createCase(repo);
+		let calls = 0;
+		const runtime = createGuidanceRuntime({
+			repository: repo,
+			model: {
+				complete: (_messages, options) => {
+					calls += 1;
+					return new Promise<string>((resolve, reject) => {
+						const timer = setTimeout(
+							() => resolve(provide(draft({ summary: `第 ${calls} 轮` }))),
+							250
+						);
+						options?.signal?.addEventListener('abort', () => {
+							clearTimeout(timer);
+							reject(new ModelClientError('本轮指导请求已取消', { reason: 'cancelled' }));
+						});
+					});
+				}
+			},
+			zhihu: zhihuClient()
+		});
+
+		runtime.start(created.id);
+		repo.appendCaseInput(created.id, {
+			kind: 'context',
+			content: '输入 2',
+			guidanceId: null,
+			requestId: randomUUID()
+		});
+		const queued = runtime.start(created.id);
+		repo.appendCaseInput(created.id, {
+			kind: 'context',
+			content: '输入 3',
+			guidanceId: null,
+			requestId: randomUUID()
+		});
+		// 第三个 revision 复用同一个排队运行；该运行启动时读取最新 revision。
+		const again = runtime.start(created.id);
+		expect(again.runId).toBe(queued.runId);
+		const result = await runtime.run(created.id);
+		expect(result.outcome).toBe('ready');
+		expect(result.guidance?.draft.understanding.summary).toBe('第 2 轮');
+		// 挂起的第 1 轮 + 最后执行的第 2 轮：不再为中间 revision 额外推理。
+		expect(calls).toBe(2);
+		const finished = repo
+			.listEvents(created.id)
+			.filter((event) => event.type === 'guidance.run.finished');
+		expect(finished).toHaveLength(2);
+		expect(finished.map((event) => (event.payload as { outcome: string }).outcome)).toEqual([
+			'superseded',
+			'ready'
+		]);
+	});
+
+	it('reuses the active run for repeated requests at the same revision', async () => {
+		const repo = repository();
+		const created = createCase(repo);
+		let calls = 0;
+		const runtime = createGuidanceRuntime({
+			repository: repo,
+			model: {
+				complete: () => {
+					calls += 1;
+					return new Promise<string>((resolve) => {
+						setTimeout(() => resolve(provide(draft({ sources: [] }))), 30);
+					});
+				}
+			},
+			zhihu: zhihuClient()
+		});
+		const first = runtime.start(created.id);
+		const second = runtime.start(created.id);
+		expect(second.runId).toBe(first.runId);
+		expect(second.reused).toBe(true);
+		await runtime.run(created.id);
+		expect(calls).toBe(1);
 	});
 });

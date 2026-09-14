@@ -1,0 +1,45 @@
+{
+  "understanding": {
+    "summary": "两个问题分别有明确的负责入口：报销进度在财务系统内查询，住宿调整需联系行政值班窗口。",
+    "openPoint": "两个事项的当前处理状态和具体受理时限尚不明确。",
+    "sources": [
+      {
+        "kind": "evidence",
+        "id": "77dd8e89-acc9-42b3-b676-7fbc9b3a66a3"
+      },
+      {
+        "kind": "evidence",
+        "id": "31291638-c18d-4e88-bda2-f2d7e995da70"
+      }
+    ]
+  },
+  "communicationChecks": [],
+  "nextStep": {
+    "kind": "contact",
+    "instruction": "先联系行政值班窗口询问住宿调整事宜。",
+    "why": "住宿调整通常有窗口期或时限要求，先确认能否调整及调整流程，避免错过时机；报销进度在系统内可随时自行查询，无需等待回复。",
+    "contact": {
+      "label": "行政值班窗口",
+      "basis": "case_material",
+      "sources": [
+        {
+          "kind": "evidence",
+          "id": "31291638-c18d-4e88-bda2-f2d7e995da70"
+        }
+      ]
+    },
+    "message": "您好，我想咨询一下住宿调整的事情：目前是否还有调整名额？需要什么条件和流程？另外，如果调整成功，大概多久能落实？",
+    "branches": [
+      {
+        "when": "行政窗口回复可调整",
+        "then": "按流程提交申请，同时在财务系统内自行查询报销进度。"
+      },
+      {
+        "when": "行政窗口回复不可调整",
+        "then": "保留现有住宿安排，转向财务系统查询报销进度。"
+      }
+    ]
+  },
+  "question": null,
+  "changeSummary": null
+}

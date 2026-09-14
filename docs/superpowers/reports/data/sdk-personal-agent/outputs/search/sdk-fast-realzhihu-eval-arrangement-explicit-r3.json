@@ -1,0 +1,32 @@
+{
+  "understanding": {
+    "summary": "房间号和领取钥匙的时间窗口已明确，到达后直接前往 3 号楼前台即可。",
+    "openPoint": null,
+    "sources": [
+      {
+        "kind": "evidence",
+        "id": "76b8fca9-8c20-491a-a192-1a07e435e74a"
+      }
+    ]
+  },
+  "communicationChecks": [],
+  "nextStep": {
+    "kind": "inspect",
+    "instruction": "将预计到达时间 17:20 与领取窗口 09:00—18:00 对照。",
+    "why": "这能直接判断是否赶得上领取钥匙，避免到达后白跑一趟。",
+    "contact": null,
+    "message": null,
+    "branches": [
+      {
+        "when": "17:20 在窗口内",
+        "then": "直接持身份证到 3 号楼前台领取钥匙并入住。"
+      },
+      {
+        "when": "早于或晚于窗口",
+        "then": "需要另行联系住宿中心确认补救办法。"
+      }
+    ]
+  },
+  "question": null,
+  "changeSummary": null
+}

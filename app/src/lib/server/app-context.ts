@@ -2,16 +2,16 @@ import { resolve } from 'node:path';
 import { env } from '$env/dynamic/private';
 
 import { createAgentRuntime } from '$lib/server/agent/runtime';
-import {
-	createGuidanceRuntime,
-	DEFAULT_MAX_MODEL_RETRIES,
-	DEFAULT_RUN_BUDGET_MS
-} from '$lib/server/agent/guidance-runtime';
+import { createGuidanceRuntime } from '$lib/server/agent/guidance-runtime';
 import {
 	createModelClient,
 	resolveModelConfiguration,
-	resolveModelTimeoutMs
+	type ModelClient,
+	type ModelConfiguration
 } from '$lib/server/agent/model-client';
+import { resolveGuidancePolicy } from '$lib/server/agent/guidance-policy';
+import { createSearchCache } from '$lib/server/agent/search-cache';
+import { createSdkModelClient, type SdkConfiguration } from '$lib/server/agent/sdk-model-client';
 import { createCaseRepository } from '$lib/server/cases/repository';
 import { createCaseService, type CaseService } from '$lib/server/services/case-service';
 import { createZhihuClient, ZhihuApiError, type ZhihuClient } from '$lib/server/zhihu/client';
@@ -32,6 +32,14 @@ export function nonNegativeIntegerOr(value: string | undefined, fallback: number
 	return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : fallback;
 }
 
+/** 指导启动限流（同步/异步端点共用）；默认每 10 分钟 10 次，可用环境变量覆盖。 */
+export function guidanceRunRateLimit(): { maximum: number; windowMs: number } {
+	return {
+		maximum: Math.max(1, nonNegativeIntegerOr(env.GUIDANCE_RUN_RATE_LIMIT, 10)),
+		windowMs: 10 * 60_000
+	};
+}
+
 function unavailableZhihuClient(): ZhihuClient {
 	return {
 		searchZhihu: async () => {
@@ -43,26 +51,105 @@ function unavailableZhihuClient(): ZhihuClient {
 	};
 }
 
+export class AgentTransportConfigurationError extends Error {
+	constructor(message: string) {
+		super(message);
+		this.name = 'AgentTransportConfigurationError';
+	}
+}
+
+export interface AgentTransportSelection {
+	transport: 'legacy' | 'sdk';
+	/** legacy 路由的模型配置；sdk 模式下为 null，不得偷偷回落到知乎直答。 */
+	modelConfiguration: ModelConfiguration | null;
+	sdkConfiguration: SdkConfiguration | null;
+}
+
+/** AGENT_TRANSPORT 只接受 legacy（默认，完全保留原优先级）与 sdk（显式直连）。 */
+export function selectAgentTransport(
+	values: Record<string, string | undefined>
+): AgentTransportSelection {
+	const raw = values.AGENT_TRANSPORT;
+	if (raw === undefined || raw === '' || raw === 'legacy') {
+		return {
+			transport: 'legacy',
+			modelConfiguration: resolveModelConfiguration(values),
+			sdkConfiguration: null
+		};
+	}
+	if (raw !== 'sdk') {
+		throw new AgentTransportConfigurationError(
+			`AGENT_TRANSPORT 配置无效：${raw}（仅支持 legacy 或 sdk）`
+		);
+	}
+	const baseURL = values.AGENT_SDK_BASE_URL?.trim();
+	const apiKey = values.AGENT_API_KEY?.trim();
+	const model = values.AGENT_MODEL?.trim();
+	if (!baseURL || !apiKey || !model) {
+		const missing = [
+			baseURL ? null : 'AGENT_SDK_BASE_URL',
+			apiKey ? null : 'AGENT_API_KEY',
+			model ? null : 'AGENT_MODEL'
+		].filter((name): name is string => name !== null);
+		throw new AgentTransportConfigurationError(
+			`AGENT_TRANSPORT=sdk 需要显式配置：${missing.join('、')} 缺失，不自动回落旧路由或知乎直答`
+		);
+	}
+	const rawStream = values.AGENT_SDK_STREAM;
+	if (rawStream !== undefined && rawStream !== '' && rawStream !== '0' && rawStream !== '1') {
+		throw new AgentTransportConfigurationError(
+			`AGENT_SDK_STREAM 配置无效：${rawStream}（仅支持 0 或 1）`
+		);
+	}
+	return {
+		transport: 'sdk',
+		modelConfiguration: null,
+		sdkConfiguration: {
+			baseURL,
+			apiKey,
+			model,
+			stream: rawStream === '1'
+		}
+	};
+}
+
+export function createAgentModelClient(
+	selection: AgentTransportSelection,
+	timeoutMs: number
+): ModelClient | null {
+	if (selection.transport === 'sdk') {
+		return createSdkModelClient(selection.sdkConfiguration as SdkConfiguration);
+	}
+	return selection.modelConfiguration
+		? createModelClient(selection.modelConfiguration, { timeoutMs })
+		: null;
+}
+
 export function getCaseService(): CaseService {
 	if (service) return service;
 	const dataDirectory = env.BACKGROUND_BOARD_DATA_DIR || resolve(process.cwd(), 'data');
 	const repository = createCaseRepository(resolve(dataDirectory, 'background-board.sqlite'));
-	const modelConfiguration = resolveModelConfiguration(env);
-	const modelTimeoutMs = resolveModelTimeoutMs(env);
-	const model = modelConfiguration
-		? createModelClient(modelConfiguration, { timeoutMs: modelTimeoutMs })
-		: null;
+	const selection = selectAgentTransport(env);
+	// 策略解析是超时/预算的唯一来源；sdk 传输下数值覆盖也必须合法，禁止静默回退到更慢路由。
+	const policy = resolveGuidancePolicy(env, { strictNumeric: selection.transport === 'sdk' });
+	const model = createAgentModelClient(selection, policy.modelTimeoutMs);
 	const zhihu = env.ZHIHU_ACCESS_SECRET
 		? createZhihuClient({ accessSecret: env.ZHIHU_ACCESS_SECRET })
 		: unavailableZhihuClient();
 	const runner = createAgentRuntime({ repository, model, zhihu });
+	// 单案例有界短期搜索缓存随 service 生命周期创建；评测 A/B 通过不注入来显式禁用。
 	const guidanceRunner = createGuidanceRuntime({
 		repository,
 		model,
 		zhihu,
-		modelTimeoutMs,
-		runBudgetMs: positiveIntegerOr(env.GUIDANCE_RUN_BUDGET_MS, DEFAULT_RUN_BUDGET_MS),
-		maxModelRetries: nonNegativeIntegerOr(env.GUIDANCE_MODEL_MAX_RETRIES, DEFAULT_MAX_MODEL_RETRIES)
+		modelTimeoutMs: policy.modelTimeoutMs,
+		runBudgetMs: policy.runBudgetMs,
+		maxModelRetries: policy.maxModelRetries,
+		maxSearches: policy.maxSearches,
+		searchTimeoutMs: policy.searchTimeoutMs,
+		maxModelSteps: policy.maxModelSteps,
+		policyMode: policy.mode,
+		searchCache: createSearchCache()
 	});
 	service = createCaseService({
 		repository,
@@ -70,7 +157,7 @@ export function getCaseService(): CaseService {
 		guidanceRunner,
 		configuration: {
 			guidanceMode: guidanceModeEnabled(env.BACKGROUND_BOARD_GUIDANCE_V2),
-			modelConfigured: Boolean(modelConfiguration),
+			modelConfigured: Boolean(selection.modelConfiguration) || Boolean(selection.sdkConfiguration),
 			zhihuConfigured: Boolean(env.ZHIHU_ACCESS_SECRET),
 			version: env.APP_VERSION || '0.1.0'
 		}

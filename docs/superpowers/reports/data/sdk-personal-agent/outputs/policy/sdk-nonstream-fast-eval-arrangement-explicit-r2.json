@@ -1,0 +1,27 @@
+{
+  "understanding": {
+    "summary": "房间号、领取地点和时间已经明确，预计 17:20 到达仍在领取窗口内。",
+    "openPoint": "到达后只需前往 3 号楼前台领取钥匙并入住。",
+    "sources": [
+      {
+        "kind": "evidence",
+        "id": "58828510-640c-4162-b290-fc71ef5210ab"
+      },
+      {
+        "kind": "input",
+        "id": "d2631412-cfde-4d54-9f50-3c7bc6d5f4ed"
+      }
+    ]
+  },
+  "communicationChecks": [],
+  "nextStep": {
+    "kind": "inspect",
+    "instruction": "将预计到达时间（17:20）与领取窗口（09:00—18:00）对照。",
+    "why": "这能直接确认是否赶得上领取钥匙，无需额外联系。",
+    "contact": null,
+    "message": null,
+    "branches": []
+  },
+  "question": null,
+  "changeSummary": null
+}

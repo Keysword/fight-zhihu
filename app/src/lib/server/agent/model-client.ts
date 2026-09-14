@@ -17,6 +17,24 @@ export interface ModelConfiguration {
 export interface ModelCallOptions {
 	signal?: AbortSignal;
 	timeoutMs?: number;
+	/** 观测回调；回调自身异常不得让已成功的请求失败。 */
+	onObservation?: (observation: ModelObservation) => void;
+}
+
+/** 传输层观测：失败尝试也记录已知耗时与已观测值；缺失的 token 用量填 null，不能填 0。 */
+export interface ModelObservation {
+	transport: 'legacy-http' | 'opencode' | 'sdk';
+	durationMs: number;
+	/** 首个非空正文 delta 的耗时；非流式无法观测时为 null。 */
+	firstContentMs: number | null;
+	inputCharacters: number;
+	outputCharacters: number;
+	inputTokens: number | null;
+	outputTokens: number | null;
+	reasoningTokens: number | null;
+	finishReason: string | null;
+	sessionCreateMs?: number;
+	sessionCleanupMs?: number;
 }
 
 export interface ModelClient {
@@ -121,11 +139,37 @@ export function createModelClient(
 	const now = options.now ?? Date.now;
 	const defaultTimeoutMs = options.timeoutMs ?? DEFAULT_MODEL_TIMEOUT_MS;
 	if (configuration.protocol === 'opencode') {
-		return createOpenCodeModelClient(configuration, fetchImpl, defaultTimeoutMs);
+		return createOpenCodeModelClient(configuration, fetchImpl, defaultTimeoutMs, now);
 	}
 
 	return {
 		async complete(messages, callOptions) {
+			const attemptStartedAt = now();
+			const inputCharacters = messages.reduce(
+				(total, message) => total + message.content.length,
+				0
+			);
+			let outputCharacters = 0;
+			/** 观测回调异常不得改写请求结果。 */
+			const emitObservation = (observation?: Partial<ModelObservation>): void => {
+				if (!callOptions?.onObservation) return;
+				try {
+					callOptions.onObservation({
+						transport: 'legacy-http',
+						durationMs: Math.round(now() - attemptStartedAt),
+						firstContentMs: null,
+						inputCharacters,
+						outputCharacters,
+						inputTokens: null,
+						outputTokens: null,
+						reasoningTokens: null,
+						finishReason: null,
+						...observation
+					});
+				} catch {
+					// ignore observer failures
+				}
+			};
 			const headers: Record<string, string> = { 'Content-Type': 'application/json' };
 			if (configuration.apiKey) headers.Authorization = `Bearer ${configuration.apiKey}`;
 			if (configuration.isZhihu) {
@@ -140,27 +184,67 @@ export function createModelClient(
 					signal: callSignal(callOptions, defaultTimeoutMs)
 				});
 			} catch (error) {
-				if (isAbort(error)) throw abortError(callOptions);
-				throw new ModelClientError('Agent 模型暂时无法连接', { reason: 'network' });
+				if (isAbort(error)) {
+					const failure = abortError(callOptions);
+					emitObservation();
+					throw failure;
+				}
+				const failure = new ModelClientError('Agent 模型暂时无法连接', { reason: 'network' });
+				emitObservation();
+				throw failure;
 			}
 			if (!response.ok) {
-				throw new ModelClientError(`Agent 模型请求失败（HTTP ${response.status}）`, {
+				const failure = new ModelClientError(`Agent 模型请求失败（HTTP ${response.status}）`, {
 					reason: 'http',
 					status: response.status
 				});
+				emitObservation();
+				throw failure;
 			}
 			let payload: unknown;
 			try {
 				payload = await response.json();
 			} catch (error) {
-				if (isAbort(error)) throw abortError(callOptions);
-				throw new ModelClientError('Agent 模型返回了无法解析的数据', { reason: 'payload' });
+				if (isAbort(error)) {
+					const failure = abortError(callOptions);
+					emitObservation();
+					throw failure;
+				}
+				const failure = new ModelClientError('Agent 模型返回了无法解析的数据', {
+					reason: 'payload'
+				});
+				emitObservation();
+				throw failure;
 			}
-			const content = (payload as { choices?: Array<{ message?: { content?: unknown } }> })
-				.choices?.[0]?.message?.content;
+			const envelope = payload as {
+				choices?: Array<{ message?: { content?: unknown }; finish_reason?: unknown }>;
+				usage?: {
+					prompt_tokens?: unknown;
+					completion_tokens?: unknown;
+					completion_tokens_details?: { reasoning_tokens?: unknown };
+				};
+			};
+			const content = envelope.choices?.[0]?.message?.content;
+			const finishReason =
+				typeof envelope.choices?.[0]?.finish_reason === 'string'
+					? envelope.choices[0].finish_reason
+					: null;
+			const usage = envelope.usage ?? {};
+			const tokenOrNull = (value: unknown): number | null =>
+				typeof value === 'number' && Number.isFinite(value) ? value : null;
 			if (typeof content !== 'string' || !content.trim()) {
-				throw new ModelClientError('Agent 模型没有返回可用动作', { reason: 'payload' });
+				const failure = new ModelClientError('Agent 模型没有返回可用动作', { reason: 'payload' });
+				emitObservation({ finishReason });
+				throw failure;
 			}
+			outputCharacters = content.length;
+			emitObservation({
+				outputCharacters,
+				inputTokens: tokenOrNull(usage.prompt_tokens),
+				outputTokens: tokenOrNull(usage.completion_tokens),
+				reasoningTokens: tokenOrNull(usage.completion_tokens_details?.reasoning_tokens),
+				finishReason
+			});
 			return content;
 		}
 	};
@@ -176,7 +260,8 @@ function isAbort(error: unknown): boolean {
 function createOpenCodeModelClient(
 	configuration: ModelConfiguration,
 	fetchImpl: typeof fetch,
-	defaultTimeoutMs: number
+	defaultTimeoutMs: number,
+	now: () => number
 ): ModelClient {
 	const origin = configuration.url.replace(/\/$/, '');
 	const authorization = `Basic ${Buffer.from(`${configuration.username ?? 'opencode'}:${configuration.apiKey}`).toString('base64')}`;
@@ -206,17 +291,97 @@ function createOpenCodeModelClient(
 
 	return {
 		async complete(messages, callOptions) {
-			const signal = callSignal(callOptions, defaultTimeoutMs);
-			const sessionResponse = await request(
-				'/session',
-				{ method: 'POST', body: JSON.stringify({ title: 'Background Board decision turn' }) },
-				callOptions,
-				signal
+			const attemptStartedAt = now();
+			const inputCharacters = messages.reduce(
+				(total, message) => total + message.content.length,
+				0
 			);
-			const session = (await sessionResponse.json()) as { id?: unknown };
-			if (typeof session.id !== 'string') {
-				throw new ModelClientError('通用 Agent 服务未创建会话', { reason: 'payload' });
+			let sessionCreateMs: number | undefined = undefined;
+			let sessionCleanupMs: number | undefined = undefined;
+			let outputCharacters = 0;
+			const emitObservation = (): void => {
+				if (!callOptions?.onObservation) return;
+				try {
+					callOptions.onObservation({
+						transport: 'opencode',
+						durationMs: Math.round(now() - attemptStartedAt),
+						firstContentMs: null,
+						inputCharacters,
+						outputCharacters,
+						inputTokens: null,
+						outputTokens: null,
+						reasoningTokens: null,
+						finishReason: null,
+						sessionCreateMs,
+						sessionCleanupMs
+					});
+				} catch {
+					// ignore observer failures
+				}
+			};
+			const signal = callSignal(callOptions, defaultTimeoutMs);
+			const sessionCreateStartedAt = now();
+			let sessionResponse: Response;
+			try {
+				sessionResponse = await request(
+					'/session',
+					{ method: 'POST', body: JSON.stringify({ title: 'Background Board decision turn' }) },
+					callOptions,
+					signal
+				);
+			} catch (error) {
+				const failure =
+					error instanceof ModelClientError
+						? error
+						: new ModelClientError('通用 Agent 服务暂时无法连接', { reason: 'network' });
+				emitObservation();
+				throw failure;
 			}
+			sessionCreateMs = Math.round(now() - sessionCreateStartedAt);
+			let session: { id?: unknown };
+			try {
+				session = (await sessionResponse.json()) as { id?: unknown };
+			} catch (error) {
+				if (isAbort(error)) {
+					const failure = abortError(callOptions);
+					emitObservation();
+					throw failure;
+				}
+				const failure = new ModelClientError('通用 Agent 服务返回了无法解析的数据', {
+					reason: 'payload'
+				});
+				emitObservation();
+				throw failure;
+			}
+			if (typeof session.id !== 'string') {
+				const failure = new ModelClientError('通用 Agent 服务未创建会话', { reason: 'payload' });
+				emitObservation();
+				throw failure;
+			}
+
+			// 会话清理是独立的有界后台 best effort：完成或取消的调用立即返回，
+			// 新运行不必等待远端 session 删除；清理耗时不阻塞调用，而是通过
+			// 延迟观测（再次回调 onObservation，携带 sessionCleanupMs）单独记录。
+			const releaseSessionInBackground = (): void => {
+				const cleanupStartedAt = now();
+				void (async () => {
+					try {
+						await fetchImpl(`${origin}/session/${session.id}`, {
+							method: 'DELETE',
+							headers,
+							signal: AbortSignal.timeout(SESSION_CLEANUP_TIMEOUT_MS)
+						});
+					} catch {
+						// A leaked short-lived inference session must not mask a valid model response.
+					}
+				})().finally(() => {
+					sessionCleanupMs = Math.round(now() - cleanupStartedAt);
+					// 延迟观测：携带 sessionCleanupMs，供 runtime 合并进既有 attempt 记录。
+					emitObservation();
+				});
+			};
+			let content: string;
+			let lastFailure: ModelClientError;
 			try {
 				const system = messages.find((message) => message.role === 'system')?.content ?? '';
 				const conversation = messages
@@ -252,26 +417,27 @@ function createOpenCodeModelClient(
 				const payload = (await response.json()) as {
 					parts?: Array<{ type?: unknown; text?: unknown }>;
 				};
-				const content = payload.parts?.find(
+				const candidate = payload.parts?.find(
 					(part) => part.type === 'text' && typeof part.text === 'string'
 				)?.text;
-				if (typeof content !== 'string' || !content.trim()) {
+				if (typeof candidate !== 'string' || !candidate.trim()) {
 					throw new ModelClientError('通用 Agent 服务没有返回可用动作', { reason: 'payload' });
 				}
-				return content;
-			} finally {
-				// Cleanup runs on its own deadline: a cancelled parent call must still release the
-				// session, and a failed release must never rewrite the original failure reason.
-				try {
-					await fetchImpl(`${origin}/session/${session.id}`, {
-						method: 'DELETE',
-						headers,
-						signal: AbortSignal.timeout(SESSION_CLEANUP_TIMEOUT_MS)
-					});
-				} catch {
-					// A leaked short-lived inference session must not mask a valid model response.
-				}
+				content = candidate;
+			} catch (error) {
+				lastFailure =
+					error instanceof ModelClientError
+						? error
+						: new ModelClientError('通用 Agent 服务返回了无法解析的数据', { reason: 'payload' });
+				outputCharacters = 0;
+				emitObservation();
+				releaseSessionInBackground();
+				throw lastFailure;
 			}
+			outputCharacters = content.length;
+			emitObservation();
+			releaseSessionInBackground();
+			return content;
 		}
 	};
 }

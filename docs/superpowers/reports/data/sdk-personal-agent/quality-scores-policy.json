@@ -1,0 +1,452 @@
+{
+  "phase": "policy",
+  "dimensions": [
+    "梳理",
+    "启发",
+    "沟通判断",
+    "可执行性",
+    "反馈适应"
+  ],
+  "range": [
+    0,
+    2
+  ],
+  "blinding": "文件先重命名为随机 id 评分，再按 .mapping.json 解盲",
+  "severeMisleadingCount": 0,
+  "severeMisleadingChecklist": [
+    "把申请写成获批：未出现",
+    "丢掉否定/条件：未出现",
+    "伪造或错配来源：未出现",
+    "把经验角色写成本单位确定职责：未出现",
+    "重复用户明确不可行的动作：未出现",
+    "未搜索却声称已检索：未出现（本轮无真实搜索调用）"
+  ],
+  "rows": [
+    {
+      "scoreId": "S01",
+      "file": "sdk-nonstream-legacypolicy-eval-long-history-r2.json",
+      "arm": "sdk-nonstream-legacypolicy",
+      "caseId": "eval-long-history",
+      "repeat": 2,
+      "outcome": "scored",
+      "scores": {
+        "梳理": 2,
+        "启发": 1,
+        "沟通判断": 1,
+        "可执行性": 2,
+        "反馈适应": null
+      },
+      "naDimensions": [
+        "反馈适应"
+      ],
+      "note": ""
+    },
+    {
+      "scoreId": "S02",
+      "file": "sdk-nonstream-fast-eval-insufficient-materials-r2.json",
+      "arm": "sdk-nonstream-fast",
+      "caseId": "eval-insufficient-materials",
+      "repeat": 2,
+      "outcome": "scored",
+      "scores": {
+        "梳理": 2,
+        "启发": 2,
+        "沟通判断": 2,
+        "可执行性": 2,
+        "反馈适应": null
+      },
+      "naDimensions": [
+        "反馈适应"
+      ],
+      "note": ""
+    },
+    {
+      "scoreId": "S03",
+      "file": "sdk-nonstream-fast-eval-arrangement-explicit-r2.json",
+      "arm": "sdk-nonstream-fast",
+      "caseId": "eval-arrangement-explicit",
+      "repeat": 2,
+      "outcome": "scored",
+      "scores": {
+        "梳理": 2,
+        "启发": 1,
+        "沟通判断": 2,
+        "可执行性": 2,
+        "反馈适应": null
+      },
+      "naDimensions": [
+        "反馈适应"
+      ],
+      "note": ""
+    },
+    {
+      "scoreId": "S04",
+      "file": "sdk-nonstream-legacypolicy-eval-followup-already-tried-r1.json",
+      "arm": "sdk-nonstream-legacypolicy",
+      "caseId": "eval-followup-already-tried",
+      "repeat": 1,
+      "outcome": "scored",
+      "scores": {
+        "梳理": 2,
+        "启发": 2,
+        "沟通判断": 2,
+        "可执行性": 2,
+        "反馈适应": 2
+      },
+      "naDimensions": [],
+      "note": ""
+    },
+    {
+      "scoreId": "S05",
+      "file": "sdk-nonstream-legacypolicy-eval-arrangement-explicit-r1.json",
+      "arm": "sdk-nonstream-legacypolicy",
+      "caseId": "eval-arrangement-explicit",
+      "repeat": 1,
+      "outcome": "scored",
+      "scores": {
+        "梳理": 2,
+        "启发": 1,
+        "沟通判断": 2,
+        "可执行性": 2,
+        "反馈适应": null
+      },
+      "naDimensions": [
+        "反馈适应"
+      ],
+      "note": ""
+    },
+    {
+      "scoreId": "S06",
+      "file": "sdk-nonstream-legacypolicy-eval-conditional-approval-r2.json",
+      "arm": "sdk-nonstream-legacypolicy",
+      "caseId": "eval-conditional-approval",
+      "repeat": 2,
+      "outcome": "scored",
+      "scores": {
+        "梳理": 2,
+        "启发": 1,
+        "沟通判断": 2,
+        "可执行性": 2,
+        "反馈适应": 1
+      },
+      "naDimensions": [],
+      "note": "changeSummary 出现“直接入股”词误（应为采购相关表述），反馈适应扣 1 分"
+    },
+    {
+      "scoreId": "S07",
+      "file": "sdk-nonstream-legacypolicy-eval-followup-already-tried-r2.json",
+      "arm": "sdk-nonstream-legacypolicy",
+      "caseId": "eval-followup-already-tried",
+      "repeat": 2,
+      "outcome": "scored",
+      "scores": {
+        "梳理": 2,
+        "启发": 2,
+        "沟通判断": 2,
+        "可执行性": 2,
+        "反馈适应": 2
+      },
+      "naDimensions": [],
+      "note": ""
+    },
+    {
+      "scoreId": "S08",
+      "file": "sdk-nonstream-fast-eval-conditional-approval-r2.json",
+      "arm": "sdk-nonstream-fast",
+      "caseId": "eval-conditional-approval",
+      "repeat": 2,
+      "outcome": "no_guidance",
+      "scores": null,
+      "naDimensions": [],
+      "note": ""
+    },
+    {
+      "scoreId": "S09",
+      "file": "sdk-nonstream-legacypolicy-eval-two-goals-need-question-r2.json",
+      "arm": "sdk-nonstream-legacypolicy",
+      "caseId": "eval-two-goals-need-question",
+      "repeat": 2,
+      "outcome": "scored",
+      "scores": {
+        "梳理": 2,
+        "启发": 1,
+        "沟通判断": 1,
+        "可执行性": 2,
+        "反馈适应": null
+      },
+      "naDimensions": [
+        "反馈适应"
+      ],
+      "note": ""
+    },
+    {
+      "scoreId": "S10",
+      "file": "sdk-nonstream-fast-eval-conditional-approval-r1.json",
+      "arm": "sdk-nonstream-fast",
+      "caseId": "eval-conditional-approval",
+      "repeat": 1,
+      "outcome": "scored",
+      "scores": {
+        "梳理": 2,
+        "启发": 2,
+        "沟通判断": 2,
+        "可执行性": 2,
+        "反馈适应": 2
+      },
+      "naDimensions": [],
+      "note": ""
+    },
+    {
+      "scoreId": "S11",
+      "file": "sdk-nonstream-fast-eval-followup-already-tried-r2.json",
+      "arm": "sdk-nonstream-fast",
+      "caseId": "eval-followup-already-tried",
+      "repeat": 2,
+      "outcome": "scored",
+      "scores": {
+        "梳理": 2,
+        "启发": 2,
+        "沟通判断": 2,
+        "可执行性": 1,
+        "反馈适应": 2
+      },
+      "naDimensions": [],
+      "note": "无 nextStep 且无 question，仅有理解与沟通疑点，可执行性扣分"
+    },
+    {
+      "scoreId": "S12",
+      "file": "sdk-nonstream-legacypolicy-eval-two-goals-need-question-r1.json",
+      "arm": "sdk-nonstream-legacypolicy",
+      "caseId": "eval-two-goals-need-question",
+      "repeat": 1,
+      "outcome": "no_guidance",
+      "scores": null,
+      "naDimensions": [],
+      "note": ""
+    },
+    {
+      "scoreId": "S13",
+      "file": "sdk-nonstream-fast-eval-followup-already-tried-r1.json",
+      "arm": "sdk-nonstream-fast",
+      "caseId": "eval-followup-already-tried",
+      "repeat": 1,
+      "outcome": "scored",
+      "scores": {
+        "梳理": 2,
+        "启发": 1,
+        "沟通判断": 1,
+        "可执行性": 1,
+        "反馈适应": 2
+      },
+      "naDimensions": [],
+      "note": "wait 步骤与“今天下班前需确认”目标匹配较弱，可执行性扣分"
+    },
+    {
+      "scoreId": "S14",
+      "file": "sdk-nonstream-fast-eval-two-goals-need-question-r1.json",
+      "arm": "sdk-nonstream-fast",
+      "caseId": "eval-two-goals-need-question",
+      "repeat": 1,
+      "outcome": "scored",
+      "scores": {
+        "梳理": 2,
+        "启发": 1,
+        "沟通判断": 1,
+        "可执行性": 2,
+        "反馈适应": null
+      },
+      "naDimensions": [
+        "反馈适应"
+      ],
+      "note": ""
+    },
+    {
+      "scoreId": "S15",
+      "file": "sdk-nonstream-fast-eval-long-history-r1.json",
+      "arm": "sdk-nonstream-fast",
+      "caseId": "eval-long-history",
+      "repeat": 1,
+      "outcome": "scored",
+      "scores": {
+        "梳理": 2,
+        "启发": 2,
+        "沟通判断": 1,
+        "可执行性": 2,
+        "反馈适应": null
+      },
+      "naDimensions": [
+        "反馈适应"
+      ],
+      "note": ""
+    },
+    {
+      "scoreId": "S16",
+      "file": "sdk-nonstream-fast-eval-insufficient-materials-r1.json",
+      "arm": "sdk-nonstream-fast",
+      "caseId": "eval-insufficient-materials",
+      "repeat": 1,
+      "outcome": "scored",
+      "scores": {
+        "梳理": 2,
+        "启发": 1,
+        "沟通判断": 2,
+        "可执行性": 2,
+        "反馈适应": null
+      },
+      "naDimensions": [
+        "反馈适应"
+      ],
+      "note": ""
+    },
+    {
+      "scoreId": "S17",
+      "file": "sdk-nonstream-fast-eval-long-history-r2.json",
+      "arm": "sdk-nonstream-fast",
+      "caseId": "eval-long-history",
+      "repeat": 2,
+      "outcome": "scored",
+      "scores": {
+        "梳理": 1,
+        "启发": 2,
+        "沟通判断": 1,
+        "可执行性": 1,
+        "反馈适应": null
+      },
+      "naDimensions": [
+        "反馈适应"
+      ],
+      "note": "把“明天下午有空”写成“今天下午”，时间线偏差"
+    },
+    {
+      "scoreId": "S18",
+      "file": "sdk-nonstream-legacypolicy-eval-long-history-r1.json",
+      "arm": "sdk-nonstream-legacypolicy",
+      "caseId": "eval-long-history",
+      "repeat": 1,
+      "outcome": "scored",
+      "scores": {
+        "梳理": 2,
+        "启发": 2,
+        "沟通判断": 1,
+        "可执行性": 1,
+        "反馈适应": null
+      },
+      "naDimensions": [
+        "反馈适应"
+      ],
+      "note": "倾向内网门户（明天才恢复），可执行性受时间窗影响"
+    },
+    {
+      "scoreId": "S19",
+      "file": "sdk-nonstream-fast-eval-arrangement-explicit-r1.json",
+      "arm": "sdk-nonstream-fast",
+      "caseId": "eval-arrangement-explicit",
+      "repeat": 1,
+      "outcome": "scored",
+      "scores": {
+        "梳理": 2,
+        "启发": 1,
+        "沟通判断": 2,
+        "可执行性": 2,
+        "反馈适应": null
+      },
+      "naDimensions": [
+        "反馈适应"
+      ],
+      "note": ""
+    },
+    {
+      "scoreId": "S20",
+      "file": "sdk-nonstream-legacypolicy-eval-insufficient-materials-r1.json",
+      "arm": "sdk-nonstream-legacypolicy",
+      "caseId": "eval-insufficient-materials",
+      "repeat": 1,
+      "outcome": "scored",
+      "scores": {
+        "梳理": 2,
+        "启发": 1,
+        "沟通判断": 2,
+        "可执行性": 2,
+        "反馈适应": null
+      },
+      "naDimensions": [
+        "反馈适应"
+      ],
+      "note": ""
+    },
+    {
+      "scoreId": "S21",
+      "file": "sdk-nonstream-fast-eval-two-goals-need-question-r2.json",
+      "arm": "sdk-nonstream-fast",
+      "caseId": "eval-two-goals-need-question",
+      "repeat": 2,
+      "outcome": "scored",
+      "scores": {
+        "梳理": 2,
+        "启发": 2,
+        "沟通判断": 2,
+        "可执行性": 2,
+        "反馈适应": null
+      },
+      "naDimensions": [
+        "反馈适应"
+      ],
+      "note": ""
+    },
+    {
+      "scoreId": "S22",
+      "file": "sdk-nonstream-legacypolicy-eval-conditional-approval-r1.json",
+      "arm": "sdk-nonstream-legacypolicy",
+      "caseId": "eval-conditional-approval",
+      "repeat": 1,
+      "outcome": "scored",
+      "scores": {
+        "梳理": 2,
+        "启发": 2,
+        "沟通判断": 2,
+        "可执行性": 2,
+        "反馈适应": 2
+      },
+      "naDimensions": [],
+      "note": ""
+    },
+    {
+      "scoreId": "S23",
+      "file": "sdk-nonstream-legacypolicy-eval-insufficient-materials-r2.json",
+      "arm": "sdk-nonstream-legacypolicy",
+      "caseId": "eval-insufficient-materials",
+      "repeat": 2,
+      "outcome": "scored",
+      "scores": {
+        "梳理": 2,
+        "启发": 1,
+        "沟通判断": 2,
+        "可执行性": 2,
+        "反馈适应": null
+      },
+      "naDimensions": [
+        "反馈适应"
+      ],
+      "note": ""
+    },
+    {
+      "scoreId": "S24",
+      "file": "sdk-nonstream-legacypolicy-eval-arrangement-explicit-r2.json",
+      "arm": "sdk-nonstream-legacypolicy",
+      "caseId": "eval-arrangement-explicit",
+      "repeat": 2,
+      "outcome": "scored",
+      "scores": {
+        "梳理": 2,
+        "启发": 1,
+        "沟通判断": 2,
+        "可执行性": 2,
+        "反馈适应": null
+      },
+      "naDimensions": [
+        "反馈适应"
+      ],
+      "note": ""
+    }
+  ]
+}

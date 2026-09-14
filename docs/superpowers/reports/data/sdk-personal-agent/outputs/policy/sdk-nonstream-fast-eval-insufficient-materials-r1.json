@@ -1,0 +1,16 @@
+{
+  "understanding": {
+    "summary": "目前只确认对方答应代为申请，并说明明天会有人接站；但住宿是否已分配、是否有房间号和领钥匙时间都还不清楚。",
+    "openPoint": "申请的宿舍是否已安排到位（如有房间号、入住时间或领钥匙安排），尚未得到确认。",
+    "sources": [
+      {
+        "kind": "evidence",
+        "id": "f47e4179-f450-46ac-948b-36fdd8f6f5b5"
+      }
+    ]
+  },
+  "communicationChecks": [],
+  "nextStep": null,
+  "question": null,
+  "changeSummary": null
+}

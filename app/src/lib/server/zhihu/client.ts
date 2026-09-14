@@ -28,9 +28,16 @@ export interface ZhihuClientOptions {
 	now?: () => number;
 }
 
+export interface SearchCallOptions {
+	signal?: AbortSignal;
+	timeoutMs?: number;
+}
+
+export const DEFAULT_SEARCH_TIMEOUT_MS = 8_000;
+
 export interface ZhihuClient {
-	searchZhihu(query: string, count?: number): Promise<ExternalClue[]>;
-	searchGlobal(query: string, count?: number): Promise<ExternalClue[]>;
+	searchZhihu(query: string, count?: number, options?: SearchCallOptions): Promise<ExternalClue[]>;
+	searchGlobal(query: string, count?: number, options?: SearchCallOptions): Promise<ExternalClue[]>;
 }
 
 function cleanUrl(rawUrl: string): string {
@@ -73,7 +80,8 @@ export function createZhihuClient(options: ZhihuClientOptions): ZhihuClient {
 		path: '/api/v1/content/zhihu_search' | '/api/v1/content/global_search',
 		query: string,
 		count: number,
-		source: 'zhihu' | 'global'
+		source: 'zhihu' | 'global',
+		callOptions?: SearchCallOptions
 	): Promise<ExternalClue[]> {
 		const normalizedQuery = query.trim();
 		if (!normalizedQuery) throw new ZhihuApiError('搜索词不能为空', 10001);
@@ -82,15 +90,31 @@ export function createZhihuClient(options: ZhihuClientOptions): ZhihuClient {
 		const url = new URL(path, API_ORIGIN);
 		url.searchParams.set('Query', normalizedQuery);
 		url.searchParams.set('Count', String(normalizedCount));
+		// 自身截止时间与整轮取消信号组合；GET 与 body 消费共用同一 signal。
+		const deadline = AbortSignal.timeout(callOptions?.timeoutMs ?? DEFAULT_SEARCH_TIMEOUT_MS);
+		const signal = callOptions?.signal ? AbortSignal.any([callOptions.signal, deadline]) : deadline;
 
-		const response = await fetchImpl(url, {
-			method: 'GET',
-			headers: {
-				Authorization: `Bearer ${options.accessSecret}`,
-				'X-Request-Timestamp': String(Math.floor(now() / 1_000)),
-				'Content-Type': 'application/json'
+		let response: Response;
+		try {
+			response = await fetchImpl(url, {
+				method: 'GET',
+				headers: {
+					Authorization: `Bearer ${options.accessSecret}`,
+					'X-Request-Timestamp': String(Math.floor(now() / 1_000)),
+					'Content-Type': 'application/json'
+				},
+				signal
+			});
+		} catch (error) {
+			if (
+				error instanceof DOMException ||
+				(error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError'))
+			) {
+				if (callOptions?.signal?.aborted) throw new ZhihuApiError('本轮搜索已取消');
+				throw new ZhihuApiError('知乎开放平台请求超时');
 			}
-		});
+			throw new ZhihuApiError('知乎开放平台暂时无法连接');
+		}
 		if (response.status === 429) throw new ZhihuRateLimitError();
 		if (!response.ok) throw new ZhihuApiError(`知乎开放平台请求失败（HTTP ${response.status}）`);
 
@@ -106,10 +130,10 @@ export function createZhihuClient(options: ZhihuClientOptions): ZhihuClient {
 	}
 
 	return {
-		searchZhihu: (query, count = 5) =>
-			search('/api/v1/content/zhihu_search', query, count, 'zhihu'),
-		searchGlobal: (query, count = 5) =>
-			search('/api/v1/content/global_search', query, count, 'global')
+		searchZhihu: (query, count = 5, callOptions) =>
+			search('/api/v1/content/zhihu_search', query, count, 'zhihu', callOptions),
+		searchGlobal: (query, count = 5, callOptions) =>
+			search('/api/v1/content/global_search', query, count, 'global', callOptions)
 	};
 }
 

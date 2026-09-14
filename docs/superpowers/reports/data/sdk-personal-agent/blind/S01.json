@@ -1,0 +1,61 @@
+{
+ "understanding": {
+  "summary": "信息中心负责宿舍网络问题。当前内网门户维护、值班电话无人接听，明天下午有空且可前往前台。前台是最有可能一次处理完成的渠道。",
+  "openPoint": "前台是否接受现场报修以及上班时间未确认。",
+  "sources": [
+   {
+    "kind": "evidence",
+    "id": "6d0af4a9-54b6-4a0d-8246-729e94513667"
+   },
+   {
+    "kind": "input",
+    "id": "d75db429-d568-4cba-aa64-5e2bab274562"
+   },
+   {
+    "kind": "input",
+    "id": "fc4a4953-6bb0-48bb-a2cd-6c625dc51af3"
+   },
+   {
+    "kind": "input",
+    "id": "afbed393-05ba-455e-9b7a-0f5111c533d3"
+   },
+   {
+    "kind": "input",
+    "id": "ed525d76-0581-498b-8b01-4398884a56ce"
+   }
+  ]
+ },
+ "communicationChecks": [],
+ "nextStep": {
+  "kind": "contact",
+  "instruction": "明天下午去行政楼2楼信息中心前台，带上室友、房间号（5号楼302）、联系方式和光猫序列号去报修。",
+  "why": "前台当前是唯一有实人处理的可能性，且已确认位置和排队时间；电话无人接听、门户维护不可用，前台可一次性办完。",
+  "contact": {
+   "label": "行政楼2楼前台",
+   "basis": "case_material",
+   "sources": [
+    {
+     "kind": "input",
+     "id": "a43e104f-2d2a-46a6-883a-40c8b90e0e1b"
+    },
+    {
+     "kind": "input",
+     "id": "fa065a78-519f-415e-9045-f5085c6bd652"
+    }
+   ]
+  },
+  "message": "您好，我是5号楼302的室友，网络端口不通（室友正常），今天来报修。需要提供房间号和联系方式对吧？这是我的光猫序列号。",
+  "branches": [
+   {
+    "when": "前台能现场登记并派工",
+    "then": "按前台告知的处理时限跟进即可。"
+   },
+   {
+    "when": "前台要求走内网门户",
+    "then": "明天门户恢复后提交，同时问前台能否代为登记。"
+   }
+  ]
+ },
+ "question": null,
+ "changeSummary": null
+}

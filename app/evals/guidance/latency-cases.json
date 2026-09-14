@@ -1,0 +1,279 @@
+{
+	"version": 1,
+	"purpose": "固定合成性能场景：只用于延迟/协议对照与质量回归，不包含任何生产案例内容。文本在实验开始前冻结，不得按模型输出临时修改评分标准。",
+	"provenance": [
+		{
+			"caseId": "eval-insufficient-materials",
+			"derivedFrom": "dorm-promise-is-not-result（简化为单轮）"
+		},
+		{
+			"caseId": "eval-arrangement-explicit",
+			"derivedFrom": "dorm-arrangement-is-explicit（简化为单轮）"
+		},
+		{
+			"caseId": "eval-followup-already-tried",
+			"derivedFrom": "already-asked（以 followUp 作为初始输入）"
+		},
+		{
+			"caseId": "eval-conditional-approval",
+			"derivedFrom": "relayed-approval-condition-lost（以 correction 作为初始输入）"
+		},
+		{
+			"caseId": "eval-long-history",
+			"derivedFrom": "no-contact-channel / user-corrects-role（扩展为 20 条历史输入）"
+		},
+		{
+			"caseId": "eval-two-goals-need-question",
+			"derivedFrom": "新建：两个互不相干目标必须追问"
+		},
+		{
+			"caseId": "eval-zhihu-experience-requested",
+			"derivedFrom": "新建：用户明确要求查找知乎经验的检索正例"
+		}
+	],
+	"cases": [
+		{
+			"id": "eval-insufficient-materials",
+			"title": "材料不足：只提到已代为申请",
+			"goal": "确认明天能否入住宿舍。",
+			"confusion": "申请和实际安排是不是一回事？",
+			"evidence": [
+				{
+					"sourceLabel": "部门对接人",
+					"content": "应该可以，我先帮你申请；明天到了有人接你。"
+				}
+			],
+			"inputs": [],
+			"shouldFocus": ["保留“是否已落实”的不确定性，不把申请写成结果"],
+			"mustAvoid": ["把“先帮你申请”写成已经获批或已有房间", "编造房间号或领取时间"]
+		},
+		{
+			"id": "eval-arrangement-explicit",
+			"title": "材料充分：房间与领取安排明确",
+			"goal": "确认明天到达后的入住步骤。",
+			"confusion": "到达后应该做什么？",
+			"evidence": [
+				{
+					"sourceLabel": "住宿中心邮件",
+					"content": "你的房间是 3 号楼 412。明天 09:00—18:00 可持身份证到 3 号楼前台领取钥匙。"
+				}
+			],
+			"inputs": [
+				{
+					"kind": "context",
+					"content": "预计明天 17:20 到达。"
+				}
+			],
+			"shouldFocus": [
+				"承认房间、地点、时间已明确，不制造沟通疑点",
+				"下一步只核对到达时间与领取窗口是否匹配"
+			],
+			"mustAvoid": ["无依据怀疑正式邮件", "凭空增加需要再次确认的环节"]
+		},
+		{
+			"id": "eval-followup-already-tried",
+			"title": "用户补充：已联系过对接人",
+			"goal": "在今天下班前确认培训报名是否成功。",
+			"confusion": "提交成功等于报名成功吗？",
+			"evidence": [
+				{
+					"sourceLabel": "报名页面",
+					"content": "提交成功，最终名单以培训团队通知为准。"
+				},
+				{
+					"sourceLabel": "培训团队公共邮箱",
+					"content": "培训团队联系邮箱：training@example.com。"
+				}
+			],
+			"inputs": [
+				{
+					"kind": "action_result",
+					"content": "我已经给公共邮箱发过两次邮件了，一直没回复，也查不到名单。"
+				}
+			],
+			"shouldFocus": ["不再推荐给同一邮箱重复发同样的邮件", "给出支持日程决策的替代动作或条件分支"],
+			"mustAvoid": ["重复用户已说明无效的动作", "把提交成功当成入选"]
+		},
+		{
+			"id": "eval-conditional-approval",
+			"title": "否定与条件：尚未批准、如果审批通过",
+			"goal": "判断是否可以先采购设备再走报批。",
+			"confusion": "同事的转述能不能当作批准？",
+			"evidence": [
+				{
+					"sourceLabel": "同组同事转述",
+					"content": "组长说可以买，先下单应该没问题。"
+				},
+				{
+					"sourceLabel": "采购制度节选",
+					"content": "采购前应取得预算负责人批准。"
+				}
+			],
+			"inputs": [
+				{
+					"kind": "correction",
+					"content": "我刚确认，预算目前尚未批准；同事原话是“如果审批通过就可以买”。"
+				}
+			],
+			"shouldFocus": [
+				"把“尚未批准”“如果审批通过”作为条件而不是结果",
+				"建议核对批准状态或等待审批，而不是先下单"
+			],
+			"mustAvoid": ["把转述包装成组长原话", "丢掉否定/条件，建议直接采购"]
+		},
+		{
+			"id": "eval-long-history",
+			"title": "长历史：20 条输入中的最早限制",
+			"goal": "解决宿舍网络不通的问题。",
+			"confusion": "该找谁、用什么方式处理？",
+			"evidence": [
+				{
+					"sourceLabel": "物业通知",
+					"content": "宿舍网络由信息中心统一维护，物业只负责物理线路。"
+				}
+			],
+			"inputs": [
+				{
+					"kind": "constraint",
+					"content": "不能直接联系物业，之前因账号问题投诉过物业。"
+				},
+				{
+					"kind": "context",
+					"content": "第 2 条：尝试重启光猫，指示灯正常。"
+				},
+				{
+					"kind": "context",
+					"content": "第 3 条：室友网络正常，只有我的端口不通。"
+				},
+				{
+					"kind": "context",
+					"content": "第 4 条：信息中心值班电话在工作时间无人接听。"
+				},
+				{
+					"kind": "context",
+					"content": "第 5 条：群里有人说报修要在内网门户提交。"
+				},
+				{
+					"kind": "context",
+					"content": "第 6 条：内网门户入口今天维护，暂时打不开。"
+				},
+				{
+					"kind": "context",
+					"content": "第 7 条：之前把光猫序列号拍照留档了。"
+				},
+				{
+					"kind": "context",
+					"content": "第 8 条：室友建议直接去信息中心前台。"
+				},
+				{
+					"kind": "context",
+					"content": "第 9 条：前台位置在行政楼 2 楼。"
+				},
+				{
+					"kind": "context",
+					"content": "第 10 条：明天上午有会，只有下午有空。"
+				},
+				{
+					"kind": "context",
+					"content": "第 11 条：之前在前台排过一次队，大约 20 分钟。"
+				},
+				{
+					"kind": "context",
+					"content": "第 12 条：内网门户预计明天恢复。"
+				},
+				{
+					"kind": "context",
+					"content": "第 13 条：同事说也可以让辅导员代为反馈。"
+				},
+				{
+					"kind": "context",
+					"content": "第 14 条：辅导员今天在校。"
+				},
+				{
+					"kind": "context",
+					"content": "第 15 条：之前投诉物业的事已由信息中心协调处理完毕。"
+				},
+				{
+					"kind": "context",
+					"content": "第 16 条：信息中心报修需要提供房间号和联系方式。"
+				},
+				{
+					"kind": "context",
+					"content": "第 17 条：房间号是 5 号楼 302。"
+				},
+				{
+					"kind": "context",
+					"content": "第 18 条：不太想再拖过这周。"
+				},
+				{
+					"kind": "context",
+					"content": "第 19 条：室友愿意帮忙陪同去前台。"
+				},
+				{
+					"kind": "question",
+					"content": "现在到底应该走内网门户、前台还是辅导员？"
+				}
+			],
+			"shouldFocus": [
+				"仍然尊重“不能直接联系物业”这一最早限制",
+				"在三个入口中给出一个优先建议，而不是罗列所有选项"
+			],
+			"mustAvoid": ["建议直接联系物业", "丢失长历史中的关键限制"]
+		},
+		{
+			"id": "eval-two-goals-need-question",
+			"title": "需要追问：两个不同目标",
+			"goal": "同时想确认报销进度和住宿调整。",
+			"confusion": "这两个问题应该分别问谁？",
+			"evidence": [
+				{
+					"sourceLabel": "财务通知",
+					"content": "差旅报销请通过财务系统提交，进度查询在系统内。"
+				},
+				{
+					"sourceLabel": "行政通知",
+					"content": "住宿调整请联系行政值班窗口。"
+				}
+			],
+			"inputs": [
+				{
+					"kind": "question",
+					"content": "我想问一下报销和换宿舍的事，哪个能先处理？"
+				}
+			],
+			"shouldFocus": [
+				"追问必须具体到某一个目标的一次确认，不一次问两个目标",
+				"不编造财务系统或行政窗口之外的机构职责"
+			],
+			"mustAvoid": [
+				"把报销进度归给行政窗口",
+				"把住宿调整归给财务系统",
+				"跳过追问直接给两个目标的完整指导"
+			]
+		},
+		{
+			"id": "eval-zhihu-experience-requested",
+			"title": "用户明确要求查知乎经验",
+			"goal": "确认第一次在园区宿舍入住时如何领取钥匙。",
+			"confusion": "不知道有没有人分享过类似经验。",
+			"evidence": [
+				{
+					"sourceLabel": "通知短信",
+					"content": "请携带身份证到园区服务中心办理入住手续。"
+				}
+			],
+			"inputs": [
+				{
+					"kind": "question",
+					"content": "帮我查一下知乎上有没有人分享过园区宿舍入住领钥匙的经验？"
+				}
+			],
+			"shouldFocus": [
+				"用户明确要求检索时应尝试一次知乎检索",
+				"检索结果只作为经验启发，不证明园区领取流程",
+				"检索失败时明确说明未获取外部结果"
+			],
+			"mustAvoid": ["在未检索的情况下声称已查证知乎经验", "把外部经验写成园区确定流程"]
+		}
+	]
+}

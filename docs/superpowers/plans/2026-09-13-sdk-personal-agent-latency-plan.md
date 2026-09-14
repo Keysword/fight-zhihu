@@ -161,9 +161,9 @@ export interface ModelCallOptions {
 
 ## Task 1：建立分支与基线
 
-- [ ] 阅读根目录及父目录适用的 `AGENTS.md`；运行 `git status --short`，记录 HEAD。不要 stash、覆盖或提交他人修改。
-- [ ] 如果实施起点已不同于上述 HEAD，先检查新的模型/runtime/测试改动，更新本方案中的兼容判断并记录差异；不要倒退丢弃用户新改动。
-- [ ] 当前分支若尚未包含本方案文件，先将本方案复制到新 worktree 对应路径。下列命令创建分支，分支已存在时先检查其状态，禁止强制覆盖：
+- [x] 阅读根目录及父目录适用的 `AGENTS.md`；运行 `git status --short`，记录 HEAD。不要 stash、覆盖或提交他人修改。
+- [x] 如果实施起点已不同于上述 HEAD，先检查新的模型/runtime/测试改动，更新本方案中的兼容判断并记录差异；不要倒退丢弃用户新改动。
+- [x] 当前分支若尚未包含本方案文件，先将本方案复制到新 worktree 对应路径。下列命令创建分支，分支已存在时先检查其状态，禁止强制覆盖：
 
 ```bash
 cd '/home/wangjian/项目/Fight zhihu'
@@ -176,15 +176,15 @@ pnpm build
 pnpm exec playwright test
 ```
 
-- [ ] 记录命令、实际测试数及失败；区分基线已有失败与新引入失败。
-- [ ] 创建实施报告，填入开始时 HEAD、工具版本、任务状态与尚缺的直连配置。配置只记录非敏感标识；不输出密钥或完整配置文件。
-- [ ] 提交基线报告和方案：`docs: record SDK latency implementation baseline`。
+- [x] 记录命令、实际测试数及失败；区分基线已有失败与新引入失败。
+- [x] 创建实施报告，填入开始时 HEAD、工具版本、任务状态与尚缺的直连配置。配置只记录非敏感标识；不输出密钥或完整配置文件。
+- [x] 提交基线报告和方案：`docs: record SDK latency implementation baseline`。
 
 ## Task 2：SDK 适配器与可回退配置
 
-- [ ] 核对 SDK 官方 README/API 和当前 Node 兼容性。已核对官方 README 明确 SDK 默认存在自动重试与长默认超时；本项目必须覆盖，不能依赖默认值。
-- [ ] 安装 SDK：在新 worktree 的 `app` 中运行 `pnpm add --save-exact openai`，记录解析到的确切版本，提交 lockfile；只安装这一个必需 SDK，不顺便升级其他依赖。
-- [ ] 在 `sdk-model-client.test.ts` 写以下请求契约测试，先确认因适配器不存在而失败。此测试可直接使用：
+- [x] 核对 SDK 官方 README/API 和当前 Node 兼容性。已核对官方 README 明确 SDK 默认存在自动重试与长默认超时；本项目必须覆盖，不能依赖默认值。
+- [x] 安装 SDK：在新 worktree 的 `app` 中运行 `pnpm add --save-exact openai`，记录解析到的确切版本，提交 lockfile；只安装这一个必需 SDK，不顺便升级其他依赖。
+- [x] 在 `sdk-model-client.test.ts` 写以下请求契约测试，先确认因适配器不存在而失败。此测试可直接使用：
 
 ```ts
 import { expect, it, vi } from 'vitest';
@@ -205,7 +205,7 @@ it('uses the SDK base URL and performs no hidden retry', async () => {
 });
 ```
 
-- [ ] 实现适配器。构造与调用的核心必须符合下列代码；在同一文件补齐数据消费和错误映射，不改变 SDK 请求为手写 fetch：
+- [x] 实现适配器。构造与调用的核心必须符合下列代码；在同一文件补齐数据消费和错误映射，不改变 SDK 请求为手写 fetch：
 
 ```ts
 import OpenAI from 'openai';
@@ -238,12 +238,12 @@ const response = await sdk.chat.completions.create({
 }, { signal, timeout: timeoutMs, maxRetries: 0 });
 ```
 
-- [ ] 非流式读取 `choices[0].message.content`；空值、空字符串、非法 payload 归类为 payload 失败。`finish_reason=length` 不作为完整答案交给保存阶段。
-- [ ] 实现独立的 `stream:true` 分支，`for await` 拼接 `choices[0]?.delta.content`，记录首个非空正文时间；正文仅在流完成后交给原协议校验。暂不向页面输出半成品，不默认发送 `stream_options` 等兼容性未验证字段。
-- [ ] 错误映射顺序：上级 signal 已取消 → cancelled；自身 deadline 已触发或 SDK timeout → timeout；SDK HTTP error → http 与 status；连接失败 → network；其余协议/正文错误 → payload。不得把所有 `DOMException` 一概归为 timeout。
-- [ ] 增加测试：正确 URL 为 `/v1/chat/completions`、Bearer 头、正常正文、空正文、401 无重试、429/503 无 SDK 重试、网络异常、主动取消、读 body 时超时、流中断、空 delta 不计首字、截断正文不保存、观测回调失败不影响成功结果。
-- [ ] 在 `app-context.ts` 接入 `AGENT_TRANSPORT`；配置选择测试覆盖 sdk 明确启用、legacy 不变、错误配置直接报错、SDK 不偷偷使用知乎直答。
-- [ ] 验证与提交：
+- [x] 非流式读取 `choices[0].message.content`；空值、空字符串、非法 payload 归类为 payload 失败。`finish_reason=length` 不作为完整答案交给保存阶段。
+- [x] 实现独立的 `stream:true` 分支，`for await` 拼接 `choices[0]?.delta.content`，记录首个非空正文时间；正文仅在流完成后交给原协议校验。暂不向页面输出半成品，不默认发送 `stream_options` 等兼容性未验证字段。
+- [x] 错误映射顺序：上级 signal 已取消 → cancelled；自身 deadline 已触发或 SDK timeout → timeout；SDK HTTP error → http 与 status；连接失败 → network；其余协议/正文错误 → payload。不得把所有 `DOMException` 一概归为 timeout。
+- [x] 增加测试：正确 URL 为 `/v1/chat/completions`、Bearer 头、正常正文、空正文、401 无重试、429/503 无 SDK 重试、网络异常、主动取消、读 body 时超时、流中断、空 delta 不计首字、截断正文不保存、观测回调失败不影响成功结果。
+- [x] 在 `app-context.ts` 接入 `AGENT_TRANSPORT`；配置选择测试覆盖 sdk 明确启用、legacy 不变、错误配置直接报错、SDK 不偷偷使用知乎直答。
+- [x] 验证与提交：
 
 ```bash
 pnpm exec vitest run src/lib/server/agent/sdk-model-client.test.ts src/lib/server/agent/model-client.test.ts src/lib/server/app-context.test.ts
@@ -254,19 +254,19 @@ git commit -m 'feat: add explicit SDK model transport'
 
 ## Task 3：可归因观测与 SDK 同模型对照
 
-- [ ] 每条 `modelCalls` 保留原有 index、attempt、durationMs、ok、parsed，增加 transport、字符数、firstContentMs、token 用量和 finishReason。旧事件缺字段仍可读。
-- [ ] OpenCode 分别计时会话创建和清理；总调用计时仍包含两者。不要修改服务端默认模型来做实验；如果无法得知底层供应商参数，报告“路径对照，存在配置混杂”，不声称纯 SDK 收益。
-- [ ] `guidance.run.finished` 增加 `requestedAt/queueMs` 或等价计时字段，区分排队与 execute 时间。保留逐 attempt 数据，修正报告中“一个 reasoning step = 一次请求”的误读。
-- [ ] 以假的单调时钟和分块流验证：第二个 chunk 才有正文时 firstContentMs 正确；失败样本有记录；一次运行只产生一条 finished；观测数据不包含 prompt、密钥、完整模型输出。
-- [ ] 新建真实评测入口。默认 `GUIDANCE_REAL_EVAL !== '1'` 时整个 suite 使用 `describe.skip`；通过共享模型工厂和真实 runtime 构造 isolated repository，不能另写一套绕过业务校验的伪应用。
-- [ ] 先跑 2 次非流式兼容性 smoke，分别确认 SDK 与旧路径都能提交合法指导。再按第 9 节实验 A 执行传输对照，记录结果；此时禁止顺便调整 prompt、模型或搜索策略。
-- [ ] 如果直连权限不可用，写明缺少的 URL/model/key，完成全部 mock 测试并继续 Task 4–7；真实对照保持未完成状态。
-- [ ] 提交：`feat: measure model transport and run latency`。
+- [x] 每条 `modelCalls` 保留原有 index、attempt、durationMs、ok、parsed，增加 transport、字符数、firstContentMs、token 用量和 finishReason。旧事件缺字段仍可读。
+- [x] OpenCode 分别计时会话创建和清理；总调用计时仍包含两者。不要修改服务端默认模型来做实验；如果无法得知底层供应商参数，报告“路径对照，存在配置混杂”，不声称纯 SDK 收益。
+- [x] `guidance.run.finished` 增加 `requestedAt/queueMs` 或等价计时字段，区分排队与 execute 时间。保留逐 attempt 数据，修正报告中“一个 reasoning step = 一次请求”的误读。
+- [x] 以假的单调时钟和分块流验证：第二个 chunk 才有正文时 firstContentMs 正确；失败样本有记录；一次运行只产生一条 finished；观测数据不包含 prompt、密钥、完整模型输出。
+- [x] 新建真实评测入口。默认 `GUIDANCE_REAL_EVAL !== '1'` 时整个 suite 使用 `describe.skip`；通过共享模型工厂和真实 runtime 构造 isolated repository，不能另写一套绕过业务校验的伪应用。
+- [x] 先跑 2 次非流式兼容性 smoke（双通道均提交合法指导。注意：用户提供的两个 key 实测与预期相反——key1 对该模型 401 过期，key2 有效；模型名区分大小写，有效 id 为 `Deepseek-v4-flash`），分别确认 SDK 与旧路径都能提交合法指导。再按第 9 节实验 A 执行传输对照，记录结果；此时禁止顺便调整 prompt、模型或搜索策略。
+- [x] 如果直连权限不可用，写明缺少的 URL/model/key，完成全部 mock 测试并继续 Task 4–7；真实对照保持未完成状态。
+- [x] 提交：`feat: measure model transport and run latency`。
 
 ## Task 4：专用 Agent 总预算与重试策略
 
-- [ ] 创建 `guidance-policy.ts`，导出 `resolveGuidancePolicy(values)`，返回 mode、runBudgetMs、modelTimeoutMs、maxModelRetries、searchTimeoutMs、maxSearches、maxModelSteps。legacy 保留旧行为，fast 使用第 3 节默认值。
-- [ ] 导出并单测重试判断，逻辑固定为：
+- [x] 创建 `guidance-policy.ts`，导出 `resolveGuidancePolicy(values)`，返回 mode、runBudgetMs、modelTimeoutMs、maxModelRetries、searchTimeoutMs、maxSearches、maxModelSteps。legacy 保留旧行为，fast 使用第 3 节默认值。
+- [x] 导出并单测重试判断，逻辑固定为：
 
 ```ts
 import { ModelClientError } from './model-client';
@@ -282,16 +282,16 @@ export function canRetryFast(
 }
 ```
 
-- [ ] 在 fast 模式测试：timeout 不重试；cancelled 不重试；401/429 不盲目重试；快速 network/503 最多重试一次；不足 10 秒不重试。延迟退避固定 200 ms，并受剩余预算控制。legacy 保留原重试契约。
-- [ ] 每次执行创建总 `AbortController` 与截止定时器，在 finally 清除；组合调用方取消和单次超时；模型、搜索和退避都收到有效 signal。预算从执行开始计算，排队另计并受调度任务约束。
-- [ ] fast 的三步是**逻辑决策上限**，真实请求数另外记录并受评测全局计数器限制。搜索耗用一步后，下一步仍可提交；搜索超限返回工具错误要求直接指导，不循环检索。
-- [ ] 修复策略保留原有 schema/reference 安全规则；剩余时间不足时优先调用已有 salvage 函数，只保存其判定为可用的草稿。不得自行放宽事实、引用或联系人职责校验。无法安全 salvage 就明确失败。
-- [ ] 测试模型永不返回、搜索永不返回、重试耗尽、超时后的迟到结果不能写入、salvage 安全失败。使用假计时器/可注入等待，不让单测真实等一分钟。
-- [ ] 运行 runtime、policy、salvage、protocol 测试与类型检查，通过后提交 `feat: bound personal agent execution and retries`。
+- [x] 在 fast 模式测试：timeout 不重试；cancelled 不重试；401/429 不盲目重试；快速 network/503 最多重试一次；不足 10 秒不重试。延迟退避固定 200 ms，并受剩余预算控制。legacy 保留原重试契约。
+- [x] 每次执行创建总 `AbortController` 与截止定时器，在 finally 清除；组合调用方取消和单次超时；模型、搜索和退避都收到有效 signal。预算从执行开始计算，排队另计并受调度任务约束。
+- [x] fast 的三步是**逻辑决策上限**，真实请求数另外记录并受评测全局计数器限制。搜索耗用一步后，下一步仍可提交；搜索超限返回工具错误要求直接指导，不循环检索。
+- [x] 修复策略保留原有 schema/reference 安全规则；剩余时间不足时优先调用已有 salvage 函数，只保存其判定为可用的草稿。不得自行放宽事实、引用或联系人职责校验。无法安全 salvage 就明确失败。
+- [x] 测试模型永不返回、搜索永不返回、重试耗尽、超时后的迟到结果不能写入、salvage 安全失败。使用假计时器/可注入等待，不让单测真实等一分钟。
+- [x] 运行 runtime、policy、salvage、protocol 测试与类型检查，通过后提交 `feat: bound personal agent execution and retries`。
 
 ## Task 5：知乎检索平衡与有界缓存
 
-- [ ] 在搜索接口增加可选第三参数，旧调用仍兼容：
+- [x] 在搜索接口增加可选第三参数，旧调用仍兼容：
 
 ```ts
 export interface SearchCallOptions {
@@ -305,8 +305,8 @@ const signal = callOptions?.signal
   ? AbortSignal.any([callOptions.signal, deadline]) : deadline;
 ```
 
-- [ ] SDK 与检索共享整轮取消；搜索本身超时可返回 `SEARCH_UNAVAILABLE` 让模型继续，整轮取消则立即停止。保留 429 分类，不在搜索工具内部额外自动重试。
-- [ ] 修改提示词，追加以下规则；不得在上下文含“知乎”两个字时就强制搜索：
+- [x] SDK 与检索共享整轮取消；搜索本身超时可返回 `SEARCH_UNAVAILABLE` 让模型继续，整轮取消则立即停止。保留 429 分类，不在搜索工具内部额外自动重试。
+- [x] 修改提示词，追加以下规则；不得在上下文含“知乎”两个字时就强制搜索：
 
 ```text
 解释用户已有材料、改写联系话术、回答上一轮追问，通常不需要外部检索。
@@ -315,30 +315,30 @@ const signal = callOptions?.signal
 检索结果只启发行动，不证明本单位职责或本案例事实。工具提示本轮不可继续搜索后，请提交指导或一个必要追问。
 ```
 
-- [ ] fast 默认一次搜索，返回 3 条摘要；用户明确检索场景放入回归集，确认没有被一刀切禁用。知乎与全网不默认同时调用。
-- [ ] 实现 `search-cache.ts`：每个 runtime 实例中按 caseId 隔离，key 包含来源、脱敏 query、count；TTL 5 分钟，每个案例最多 20 项，最多 100 个案例，淘汰最旧项。缓存不落盘，失败/超时不缓存，不跨用户复用。
-- [ ] 缓存命中仍在本轮 gatheredClues 注册同一来源并通过原引用校验；记录 `cacheHit`，将实际请求数与逻辑搜索数分开。评测 A/B 禁用缓存以便公平比较；另测缓存收益。
-- [ ] 测试：超时不中断已保存输入、429 不循环、整轮取消、搜索词脱敏、同 case 命中、不同 case 隔离、过期重新请求、失败不缓存、缓存来源在本轮可引用。
-- [ ] 运行 zhihu、cache、prompt、runtime 测试，通过后提交 `feat: bound and reuse contextual searches`。
+- [x] fast 默认一次搜索，返回 3 条摘要；用户明确检索场景放入回归集，确认没有被一刀切禁用。知乎与全网不默认同时调用。
+- [x] 实现 `search-cache.ts`：每个 runtime 实例中按 caseId 隔离，key 包含来源、脱敏 query、count；TTL 5 分钟，每个案例最多 20 项，最多 100 个案例，淘汰最旧项。缓存不落盘，失败/超时不缓存，不跨用户复用。
+- [x] 缓存命中仍在本轮 gatheredClues 注册同一来源并通过原引用校验；记录 `cacheHit`，将实际请求数与逻辑搜索数分开。评测 A/B 禁用缓存以便公平比较；另测缓存收益。
+- [x] 测试：超时不中断已保存输入、429 不循环、整轮取消、搜索词脱敏、同 case 命中、不同 case 隔离、过期重新请求、失败不缓存、缓存来源在本轮可引用。
+- [x] 运行 zhihu、cache、prompt、runtime 测试，通过后提交 `feat: bound and reuse contextual searches`。
 
 ## Task 6：新版输入取消旧运行与上下文去重
 
-- [ ] 先写调度反例：revision 1 的 model promise 保持未完成；输入新增到 revision 2 后启动运行；断言旧 signal 被取消，新版无需等旧模型自然完成，旧结果即使迟到也不能成为当前指导。
-- [ ] 扩展 `CaseFlightState` 保存 active controller；同 revision 复用，较新 revision 取消旧 controller。取消后新运行启动前完成旧运行的本地终态结算，但不得等待长时间远端 session 清理。OpenCode 清理改成有界后台 best effort，并单独观测。
-- [ ] 用单调 generation/runId 校验清理所有权，防止旧 promise finally 删除新状态；以 repository 的 contextRevision 校验作为最后写入保护，不能只靠前端。
-- [ ] 复用现有 `superseded` outcome 表示新版替代，不虚构成功；在进度和 UI 中显示“已由更新后的整理替代”。若运行尚未进入 execute，也应能查询 queued/取消状态，不能返回 runId 后立即 404。
-- [ ] 不新增用户主动取消按钮，本轮只实现新输入替代旧输入；避免同时扩大交互范围。
-- [ ] 上下文只做确定性去重：latestGuidance 已出现于 referencedGuidance 时只传一次；按 input.id 去重，移除模型不需要的 requestId/createdAt 等传输字段。保留原始用户正文、限制、纠正、deadline、来源 ID 和引用关系。
-- [ ] 不引入额外“总结历史”的模型调用，不按字符串长度硬截断正文。超过既有上下文上限仍明确报错；后续压缩不纳入本轮必需交付。
-- [ ] 测试：相同 revision 去重、连续三次新输入只保留最后有效运行、旧 run finished 恰好一次、迟到旧输出不覆盖、保留联系人限制与历史引用、重复指导删除前后来源可用。
-- [ ] 运行 runtime/service/prompt 单测与 guided E2E，通过后提交 `feat: supersede stale guidance and deduplicate context`。
+- [x] 先写调度反例：revision 1 的 model promise 保持未完成；输入新增到 revision 2 后启动运行；断言旧 signal 被取消，新版无需等旧模型自然完成，旧结果即使迟到也不能成为当前指导。
+- [x] 扩展 `CaseFlightState` 保存 active controller；同 revision 复用，较新 revision 取消旧 controller。取消后新运行启动前完成旧运行的本地终态结算，但不得等待长时间远端 session 清理。OpenCode 清理改成有界后台 best effort，并单独观测。
+- [x] 用单调 generation/runId 校验清理所有权，防止旧 promise finally 删除新状态；以 repository 的 contextRevision 校验作为最后写入保护，不能只靠前端。
+- [x] 复用现有 `superseded` outcome 表示新版替代，不虚构成功；在进度和 UI 中显示“已由更新后的整理替代”。若运行尚未进入 execute，也应能查询 queued/取消状态，不能返回 runId 后立即 404。
+- [x] 不新增用户主动取消按钮，本轮只实现新输入替代旧输入；避免同时扩大交互范围。
+- [x] 上下文只做确定性去重：latestGuidance 已出现于 referencedGuidance 时只传一次；按 input.id 去重，移除模型不需要的 requestId/createdAt 等传输字段。保留原始用户正文、限制、纠正、deadline、来源 ID 和引用关系。
+- [x] 不引入额外“总结历史”的模型调用，不按字符串长度硬截断正文。超过既有上下文上限仍明确报错；后续压缩不纳入本轮必需交付。
+- [x] 测试：相同 revision 去重、连续三次新输入只保留最后有效运行、旧 run finished 恰好一次、迟到旧输出不覆盖、保留联系人限制与历史引用、重复指导删除前后来源可用。
+- [x] 运行 runtime/service/prompt 单测与 guided E2E，通过后提交 `feat: supersede stale guidance and deduplicate context`。
 
 ## Task 7：完整回归与隔离验收
 
-- [ ] 扩展本地模型夹具支持 SDK 路径和 SSE：至少覆盖正常正文、先空 delta 后正文、延迟响应、超时、503、非法来源；不使用真实服务做 E2E。
-- [ ] 保留 legacy/guided 两套原有项目；增加 SDK 环境组合的执行方式，测试数据目录每次 `mkdtemp`，只清理当前执行拥有的目录。不要复用 `app/data`。
-- [ ] guided E2E 验证：首次整理；补充输入后新指导；失败后材料保留；同 revision 多次请求不重复推理；新版替代旧版；搜索失败后明确状态；最终内容无原始 JSON 泄漏。
-- [ ] 完成一次全门禁；后续只有修复新增问题才重复相关检查：
+- [x] 扩展本地模型夹具支持 SDK 路径和 SSE：至少覆盖正常正文、先空 delta 后正文、延迟响应、超时、503、非法来源；不使用真实服务做 E2E。
+- [x] 保留 legacy/guided 两套原有项目；增加 SDK 环境组合的执行方式，测试数据目录每次 `mkdtemp`，只清理当前执行拥有的目录。不要复用 `app/data`。
+- [x] guided E2E 验证：首次整理；补充输入后新指导；失败后材料保留；同 revision 多次请求不重复推理；新版替代旧版；搜索失败后明确状态；最终内容无原始 JSON 泄漏。
+- [x] 完成一次全门禁；后续只有修复新增问题才重复相关检查：
 
 ```bash
 pnpm format:check
@@ -349,8 +349,8 @@ pnpm build
 pnpm exec playwright test
 ```
 
-- [ ] 确认运行 `pnpm test:unit -- --run` 不会自动访问真实模型。评测入口必须 opt-in，真实凭证缺失不能影响普通测试。
-- [ ] 提交：`test: cover SDK personal agent workflows`。
+- [x] 确认运行 `pnpm test:unit -- --run` 不会自动访问真实模型。评测入口必须 opt-in，真实凭证缺失不能影响普通测试。
+- [x] 提交：`test: cover SDK personal agent workflows`。
 
 ## 8. 评测入口必须实现的契约
 
@@ -450,13 +450,14 @@ interface EvaluationRow {
 
 ## Task 8：报告、配置回退与交付
 
-- [ ] 完成真实对照；如果缺少凭证，把“工程完成”和“真实验证未完成”分列，不得写已达性能目标。
-- [ ] 更新 `.env.example`，准确记录 legacy/fast 默认值，修正文档 120 秒与代码 240 秒漂移；记录 SDK 版本、配置选择与直接 URL/base URL 区别。
-- [ ] 更新部署文档：本轮未部署。未来灰度先通过独立实例启用 SDK，确认质量门禁后再切换；保留旧凭证/配置，不能切换时删除旧链路。
-- [ ] 回退方案：未来若已获授权灰度，设置 `AGENT_TRANSPORT=legacy`、`GUIDANCE_POLICY=legacy` 并恢复原有 tuning 覆盖值，按原发布流程重启实例。仅改 policy 不会清除 fast 的显式环境覆盖，因此必须一并恢复。无需数据库 schema 回滚。
-- [ ] 检查日志、提交 diff 和输出文件无凭证，无生产用户内容，无意外 lockfile 大范围升级。
-- [ ] 提交报告、数据、文档：`docs: report SDK personal agent latency evaluation`。
-- [ ] 最后输出以下内容：分支/worktree 路径、提交列表、各门禁实测结果、对照表、质量评分、未完成项、是否建议上线和回退办法。用户没有要求发布，不执行部署脚本。
+- [x] 完成真实对照；如果缺少凭证
+  - 完成：实验 A（legacy-http vs SDK，OpenCode 臂缺 OPENCODE_SERVER_URL 未执行）与实验 B（legacy 策略 vs fast）；实验 C 真实搜索因缺少 ZHIHU_ACCESS_SECRET 未执行，夹具覆盖部分全部通过。性能相对目标未达成，已在报告判定"未通过上线门禁"。，把“工程完成”和“真实验证未完成”分列，不得写已达性能目标。
+- [x] 更新 `.env.example`，准确记录 legacy/fast 默认值，修正文档 120 秒与代码 240 秒漂移；记录 SDK 版本、配置选择与直接 URL/base URL 区别。
+- [x] 更新部署文档：本轮未部署。未来灰度先通过独立实例启用 SDK，确认质量门禁后再切换；保留旧凭证/配置，不能切换时删除旧链路。
+- [x] 回退方案：未来若已获授权灰度，设置 `AGENT_TRANSPORT=legacy`、`GUIDANCE_POLICY=legacy` 并恢复原有 tuning 覆盖值，按原发布流程重启实例。仅改 policy 不会清除 fast 的显式环境覆盖，因此必须一并恢复。无需数据库 schema 回滚。
+- [x] 检查日志、提交 diff 和输出文件无凭证，无生产用户内容，无意外 lockfile 大范围升级。
+- [x] 提交报告、数据、文档：`docs: report SDK personal agent latency evaluation`。
+- [x] 最后输出以下内容：分支/worktree 路径、提交列表、各门禁实测结果、对照表、质量评分、未完成项、是否建议上线和回退办法。用户没有要求发布，不执行部署脚本。
 
 ## 10. 执行 Agent 的最终交付模板
 

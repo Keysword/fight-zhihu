@@ -1,0 +1,66 @@
+{
+  "understanding": {
+    "summary": "采购制度要求先取得预算负责人批准，且预算目前尚未批准；同事转述的条件是“如果审批通过就可以买”，并未构成实际批准。",
+    "openPoint": "预算审批何时能通过、是否有其他途径获得提前授权，仍不清楚。",
+    "sources": [
+      {
+        "kind": "evidence",
+        "id": "dc9616fb-1e93-4732-9ad7-dcf966102b84"
+      },
+      {
+        "kind": "evidence",
+        "id": "b75a997d-e163-4fcd-b50c-54f5d1347e47"
+      },
+      {
+        "kind": "input",
+        "id": "bcba1277-7a56-43df-a2cc-b028282b5437"
+      }
+    ]
+  },
+  "communicationChecks": [
+    {
+      "observation": "同事转述中出现了“可以买”“先下单应该没问题”，但原始条件实际是“如果审批通过”。",
+      "possibleMisreading": "转述省略了审批前提，可能被误认为已获得批准。",
+      "whyItMatters": "当前预算尚未批准，直接采购可能违反采购制度要求。",
+      "howToCheck": "直接向预算负责人确认当前审批状态及是否有前置授权。",
+      "sources": [
+        {
+          "kind": "evidence",
+          "id": "dc9616fb-1e93-4732-9ad7-dcf966102b84"
+        },
+        {
+          "kind": "evidence",
+          "id": "b75a997d-e163-4fcd-b50c-54f5d1347e47"
+        }
+      ]
+    }
+  ],
+  "nextStep": {
+    "kind": "contact",
+    "instruction": "联系预算负责人，明确当前审批状态及是否能启动采购。",
+    "why": "只有审批通过或获得明确授权，才能合法推进采购。",
+    "contact": {
+      "label": "预算负责人",
+      "basis": "case_material",
+      "sources": [
+        {
+          "kind": "evidence",
+          "id": "b75a997d-e163-4fcd-b50c-54f5d1347e47"
+        }
+      ]
+    },
+    "message": "想确认预算审批目前是否已通过？如果尚未通过，是否有条件先下单或获得临时授权？",
+    "branches": [
+      {
+        "when": "预算审批已通过或获得临时授权",
+        "then": "按约定条件采购设备，优先满足需求。"
+      },
+      {
+        "when": "审批未通过且无临时授权",
+        "then": "等待审批结果，暂缓采购动作，避免违反制度。"
+      }
+    ]
+  },
+  "question": null,
+  "changeSummary": null
+}

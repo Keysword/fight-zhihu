@@ -1,0 +1,23 @@
+{
+  "understanding": {
+    "summary": "房间号、领取地点和时间已经明确，预计17:20到达在领取窗口09:00—18:00之内，只需按时到前台凭身份证领钥匙即可。",
+    "openPoint": null,
+    "sources": [
+      {
+        "kind": "evidence",
+        "id": "a2631098-5434-41f8-a7ac-0eddbc3238d5"
+      }
+    ]
+  },
+  "communicationChecks": [],
+  "nextStep": {
+    "kind": "inspect",
+    "instruction": "对照时间判断是否赶得上领取窗口。",
+    "why": "这能确认是否需要在到达前调整行程或准备替代方案。",
+    "contact": null,
+    "message": null,
+    "branches": []
+  },
+  "question": null,
+  "changeSummary": null
+}

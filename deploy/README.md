@@ -64,3 +64,6 @@ curl --fail https://projects.wangjian7410.cc/background-board/api/health
 - `GUIDANCE_POLICY=fast` 启用 60 秒整轮预算、40 秒单次超时、最多 1 次重试；`legacy` 保持 240/90 秒与 2 次重试。两者可与任意传输组合。
 
 当前线上配置为 `AGENT_TRANSPORT=sdk` + `GUIDANCE_POLICY=fast`（凭证见服务器密钥文件，不入库）。回退到 OpenCode：删除 `AGENT_TRANSPORT`、`GUIDANCE_POLICY` 两行并保留原 `OPENCODE_SERVER_*` 配置，然后 `systemctl restart background-board`。切换前先备份 `/etc/background-board.env`。
+
+回退补充：如果之前在 fast 模式下显式覆盖过 `GUIDANCE_RUN_BUDGET_MS`、`GUIDANCE_MODEL_TIMEOUT_MS`、`GUIDANCE_MODEL_MAX_RETRIES`，仅改回 `GUIDANCE_POLICY=legacy` 不会清除这些覆盖，回退时必须一并恢复原值。无需数据库 schema 回滚。
+

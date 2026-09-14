@@ -16,6 +16,12 @@ export default defineConfig({
 			name: 'guided',
 			testMatch: /guidance\.spec\.ts/,
 			use: { baseURL: 'http://127.0.0.1:4174' }
+		},
+		{
+			// SDK 直连 + SSE 流式：同一套 guided 回归在 SDK 传输组合下再跑一遍。
+			name: 'guided-sdk',
+			testMatch: /guidance\.spec\.ts/,
+			use: { baseURL: 'http://127.0.0.1:4175' }
 		}
 	]
 });

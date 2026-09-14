@@ -19,6 +19,11 @@ export const GUIDANCE_CONSTITUTION = `你帮助用户处理一件正在卡住的
 {"type":"search_zhihu","query":"抽象检索词","count":3}
 {"type":"search_global","query":"抽象检索词","count":5}
 
+检索原则：解释用户已有材料、改写联系话术、回答上一轮追问，通常不需要外部检索。
+当外部经验可能改变可尝试入口，或用户明确要求查找知乎/外部经验时，才请求搜索。上下文里出现“知乎”两个字不等于必须搜索。
+用户明确要求检索时应尝试检索；检索失败必须说明未获取外部结果，不得声称已经查证。
+检索结果只启发行动，不证明本单位职责或本案例事实。工具提示本轮不可继续搜索后，请提交指导或一个必要追问。
+
 provide_guidance 必须携带完整且严格的 guidance 对象。可按材料将可空字段设为 null、将 communicationChecks 或 branches 设为空数组。
 
 已有明确安排时的完整示例。材料已经回答的问题不需要重新质疑，下一步也不必总是联系别人：
@@ -66,15 +71,12 @@ function projectEvidence(evidence: Evidence) {
 }
 
 function projectInput(input: CaseInput) {
+	// 只保留模型需要的字段；requestId/createdAt 等传输字段不进入上下文。
 	return {
 		id: input.id,
-		caseId: input.caseId,
-		contextRevision: input.contextRevision,
 		kind: input.kind,
 		content: input.content,
-		guidanceId: input.guidanceId,
-		requestId: input.requestId,
-		createdAt: input.createdAt
+		guidanceId: input.guidanceId
 	};
 }
 
@@ -109,13 +111,23 @@ export function buildGuidanceMessages(context: GuidancePromptContext): ModelMess
 		confusion: context.case.confusion,
 		contextRevision: context.case.contextRevision
 	};
+	// 确定性去重：同一输入 id 只出现一次，不删除任何正文或引用关系。
+	const dedupedInputs = [...new Map(context.inputs.map((input) => [input.id, input])).values()];
+	// 上一版指导若同时被本轮输入引用，只保留 priorGuidance 一处，不重复传输。
+	const priorId = context.priorGuidance?.id ?? null;
+	const seenReferenced = new Set<string>();
+	const dedupedReferenced = context.referencedGuidance.filter((guidance) => {
+		if (guidance.id === priorId || seenReferenced.has(guidance.id)) return false;
+		seenReferenced.add(guidance.id);
+		return true;
+	});
 	const sections = [
 		`【案例目标与困惑】\n${JSON.stringify(safeCase)}`,
 		`【用户原始材料】\n${JSON.stringify(context.evidence.map(projectEvidence))}`,
-		`【持久化用户输入】\n${JSON.stringify(context.inputs.map(projectInput))}`,
+		`【持久化用户输入】\n${JSON.stringify(dedupedInputs.map(projectInput))}`,
 		`【本轮外部线索】（仅供启发）\n${JSON.stringify(context.externalClues.map(projectExternalClue))}`,
 		`【上一版指导：可修正的模型输出】\n${JSON.stringify(context.priorGuidance ? projectPriorGuidance(context.priorGuidance) : null)}`,
-		`【被本轮输入引用的历史指导：可修正的模型输出】\n${JSON.stringify(context.referencedGuidance.map(projectPriorGuidance))}`
+		`【被本轮输入引用的历史指导：可修正的模型输出】\n${JSON.stringify(dedupedReferenced.map(projectPriorGuidance))}`
 	];
 
 	return [

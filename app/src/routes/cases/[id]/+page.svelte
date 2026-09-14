@@ -153,7 +153,7 @@
 				guidedFailure = savedInput ? `${savedInput}已保存，本轮未完成` : '本轮整理没有完成';
 				guidedStatus = payload.data.run.error?.message ?? '可以稍后只重试整理';
 			} else if (payload.data.run?.outcome === 'superseded') {
-				guidedFailure = '有更新晚于本轮整理';
+				guidedFailure = '已由更新后的整理替代';
 				guidedStatus = '这版结果没有成为当前理解，请只重试整理。';
 			} else {
 				guidedStatus =
@@ -255,7 +255,7 @@
 				guidedFailure = '材料已保存，本轮未完成';
 				guidedStatus = payload.data.run.error?.message ?? '可以稍后只重试整理';
 			} else if (payload.data.run?.outcome === 'superseded') {
-				guidedFailure = '材料已保存，但有更新晚于本轮整理';
+				guidedFailure = '材料已保存，本轮整理已由更新后的整理替代';
 				guidedStatus = '这版结果没有成为当前理解，请只重试整理。';
 			} else guidedStatus = '材料已保存，并已更新当前理解。';
 		} catch (error) {

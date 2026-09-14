@@ -1,0 +1,45 @@
+{
+ "understanding": {
+  "summary": "两个问题目前已有明确的处理入口：报销进度在财务系统内查询，住宿调整联系行政值班窗口。当前只需按各自入口分别处理。",
+  "openPoint": "两个事项的处理时间都无法从现有材料判断先后。",
+  "sources": [
+   {
+    "kind": "evidence",
+    "id": "8928fbbc-8d56-4e1f-83c6-75f7f460c4ac"
+   },
+   {
+    "kind": "evidence",
+    "id": "65e647ad-dead-4a7a-acb0-28bc9ccf521f"
+   }
+  ]
+ },
+ "communicationChecks": [],
+ "nextStep": {
+  "kind": "contact",
+  "instruction": "先登录财务系统查看报销进度，再把住宿调整需求发给行政值班窗口。",
+  "why": "两个问题分属两个不同入口，需要分别联系，且两者互不依赖。",
+  "contact": {
+   "label": "行政值班窗口",
+   "basis": "case_material",
+   "sources": [
+    {
+     "kind": "evidence",
+     "id": "65e647ad-dead-4a7a-acb0-28bc9ccf521f"
+    }
+   ]
+  },
+  "message": "您好，我想申请住宿调整，请问需要提供哪些信息？另外，差旅报销进度在财务系统里如何查看？",
+  "branches": [
+   {
+    "when": "财务系统可查到报销状态",
+    "then": "按系统提示跟进报销进度。"
+   },
+   {
+    "when": "行政窗口回应住宿调整",
+    "then": "按要求提交换宿申请材料。"
+   }
+  ]
+ },
+ "question": null,
+ "changeSummary": "根据用户原始材料，两个问题分别对应不同入口，已分别定位处理路径。"
+}

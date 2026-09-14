@@ -1,0 +1,27 @@
+{
+  "understanding": {
+    "summary": "房间号（3号楼412）、领取地点（3号楼前台）和时间窗口（09:00—18:00）都已明确，预计17:20到达在窗口内，只需按提示持身份证前往领取钥匙即可。",
+    "openPoint": null,
+    "sources": [
+      {
+        "kind": "evidence",
+        "id": "6de21650-e940-4f51-bb53-77fcfcf828cc"
+      },
+      {
+        "kind": "input",
+        "id": "6422ce0a-f1b0-4741-8eab-5ceaa1db46a0"
+      }
+    ]
+  },
+  "communicationChecks": [],
+  "nextStep": {
+    "kind": "inspect",
+    "instruction": "明天17:20到达后，持身份证到3号楼前台，在09:00—18:00窗口内领取钥匙。",
+    "why": "你的到达时间在领取时段内，无需额外联系或调整，直接按通知执行即可。",
+    "contact": null,
+    "message": null,
+    "branches": []
+  },
+  "question": null,
+  "changeSummary": null
+}
