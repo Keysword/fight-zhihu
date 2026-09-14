@@ -16,6 +16,7 @@ import type { ModelClient, ModelMessage } from '$lib/server/agent/model-client';
 import { createZhihuClient, type ZhihuClient } from '$lib/server/zhihu/client';
 import {
 	BudgetExhaustedError,
+	createEvalRuntimeDependencies,
 	EvalSession,
 	isolatedRepository,
 	latencyScenarios,
@@ -135,16 +136,11 @@ async function runFullGuidance(options: {
 				}
 			}
 		: null;
-	const runtime = createGuidanceRuntime({
+	const runtime = createEvalRuntimeDependencies({
 		repository,
 		model: countedModel,
-		zhihu: unavailableZhihu(),
-		modelTimeoutMs: policy.modelTimeoutMs,
-		runBudgetMs: policy.runBudgetMs,
-		maxModelRetries: policy.maxModelRetries,
-		maxSearches: policy.maxSearches,
-		searchTimeoutMs: policy.searchTimeoutMs,
-		maxModelSteps: policy.maxModelSteps
+		policy,
+		zhihu: unavailableZhihu()
 	});
 	const startedAt = Date.now();
 	const result = await runtime.run(materialised.caseId);
@@ -374,8 +370,10 @@ phaseSuite('search', () => {
 	});
 
 	const searchScenarios = [
-		{ scenarioId: 'eval-arrangement-explicit', expectSearch: false },
-		{ scenarioId: 'eval-insufficient-materials', expectSearch: false }
+		// 正例：用户明确要求查知乎经验，必须出现一次真实检索尝试。
+		{ scenarioId: 'eval-zhihu-experience-requested', expectSearch: true },
+		// 负例：普通材料解释，非必要检索不应发生。
+		{ scenarioId: 'eval-arrangement-explicit', expectSearch: false }
 	] as const;
 
 	for (const entry of searchScenarios) {
@@ -386,14 +384,15 @@ phaseSuite('search', () => {
 				const zhihu = createZhihuClient({
 					accessSecret: process.env.ZHIHU_ACCESS_SECRET as string
 				});
+				// 透传 SearchCallOptions：runtime 的取消/超时预算必须到达真实请求边界。
 				const countedZhihu: ZhihuClient = {
-					searchZhihu: async (query, count) => {
+					searchZhihu: async (query, count, options) => {
 						session.reserveSearchRequests(1);
-						return zhihu.searchZhihu(query, count);
+						return zhihu.searchZhihu(query, count, options);
 					},
-					searchGlobal: async (query, count) => {
+					searchGlobal: async (query, count, options) => {
 						session.reserveSearchRequests(1);
-						return zhihu.searchGlobal(query, count);
+						return zhihu.searchGlobal(query, count, options);
 					}
 				};
 				const repository = isolatedRepository();
@@ -403,7 +402,7 @@ phaseSuite('search', () => {
 				);
 				const policy = resolveGuidancePolicy({ GUIDANCE_POLICY: 'fast' });
 				const model = sdkArm.createClient({ onModelRequest: () => {} });
-				const runtime = createGuidanceRuntime({
+				const runtime = createEvalRuntimeDependencies({
 					repository,
 					model: {
 						complete: (messages, callOptions) => {
@@ -414,13 +413,8 @@ phaseSuite('search', () => {
 							});
 						}
 					},
-					zhihu: countedZhihu,
-					modelTimeoutMs: policy.modelTimeoutMs,
-					runBudgetMs: policy.runBudgetMs,
-					maxModelRetries: policy.maxModelRetries,
-					maxSearches: policy.maxSearches,
-					searchTimeoutMs: policy.searchTimeoutMs,
-					maxModelSteps: policy.maxModelSteps
+					policy,
+					zhihu: countedZhihu
 				});
 				const result = await runtime.run(materialised.caseId);
 				const payload = finishedPayloadFor(repository, materialised.caseId, result.runId);
@@ -456,6 +450,20 @@ phaseSuite('search', () => {
 					repeat,
 					result.guidance
 				);
+				if (entry.expectSearch) {
+					// 正例契约：用户明确要求检索时必须发生一次真实搜索尝试。
+					expect(searches.length).toBeGreaterThanOrEqual(1);
+					// 检索失败时输出不得声称已查证（正文不含"已查证/根据检索结果确认"类断言）。
+					if (searches.every((search) => search.outcome !== 'ok')) {
+						const draft = (result.guidance as GuidanceSnapshot | null)?.draft;
+						const serialized = draft ? JSON.stringify(draft) : '';
+						expect(serialized.includes('已查证') && searches.every((s) => s.outcome !== 'ok')).toBe(
+							false
+						);
+					}
+				} else {
+					expect(searches.length).toBe(0);
+				}
 				expect(['ready', 'needs_input', 'failed']).toContain(result.outcome);
 			});
 		}

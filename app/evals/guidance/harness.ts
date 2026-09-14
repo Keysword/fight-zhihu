@@ -14,9 +14,11 @@ import { fileURLToPath } from 'node:url';
 
 import type { GuidanceSnapshot } from '$lib/domain/guidance';
 import { createCaseRepository, type CaseRepository } from '$lib/server/cases/repository';
+import { createGuidanceRuntime } from '$lib/server/agent/guidance-runtime';
 import { createModelClient, type ModelClient } from '$lib/server/agent/model-client';
 import { createSdkModelClient } from '$lib/server/agent/sdk-model-client';
 import { createZhihuClient, type ZhihuClient } from '$lib/server/zhihu/client';
+import type { SearchCache } from '$lib/server/agent/search-cache';
 import scenarioFile from './latency-cases.json';
 
 export type EvaluationPhase = 'smoke' | 'transport' | 'policy' | 'search';
@@ -77,17 +79,31 @@ export class BudgetExhaustedError extends Error {
 const dataDirectory = fileURLToPath(
 	new URL('../../../docs/superpowers/reports/data/sdk-personal-agent/', import.meta.url)
 );
-const ledgerPath = join(dataDirectory, 'ledger.json');
+/** 测试用：把 ledger/产物指向隔离临时目录，绝不触碰真实 ledger。 */
+export function overrideDataDirectoryForTests(directory: string): void {
+	dataDirOverride = directory;
+}
+
+let dataDirOverride: string | null = null;
+
+function activeDataDirectory(): string {
+	return dataDirOverride ?? dataDirectory;
+}
+
+function activeLedgerPath(): string {
+	return join(activeDataDirectory(), 'ledger.json');
+}
 
 function readLedger(): Ledger {
-	if (!existsSync(ledgerPath)) return { modelRequests: 0, searchRequests: 0, updatedAt: '' };
-	return JSON.parse(readFileSync(ledgerPath, 'utf8')) as Ledger;
+	const path = activeLedgerPath();
+	if (!existsSync(path)) return { modelRequests: 0, searchRequests: 0, updatedAt: '' };
+	return JSON.parse(readFileSync(path, 'utf8')) as Ledger;
 }
 
 function writeLedger(ledger: Ledger): void {
-	mkdirSync(dataDirectory, { recursive: true });
+	mkdirSync(activeDataDirectory(), { recursive: true });
 	ledger.updatedAt = new Date().toISOString();
-	writeFileSync(ledgerPath, JSON.stringify(ledger, null, 2));
+	writeFileSync(activeLedgerPath(), JSON.stringify(ledger, null, 2));
 }
 
 /** gitignored、0600 的评测凭证文件；键值注入 process.env，不写入任何报告。 */
@@ -276,14 +292,28 @@ export class EvalSession {
 		this.phase = options.phase;
 		this.commit = currentCommit();
 		this.sdkVersion = readSdkVersion();
-		this.dataDir = dataDirectory;
+		this.dataDir = activeDataDirectory();
 		this.globalModelLimit = positiveInt(process.env.GUIDANCE_EVAL_MODEL_LIMIT, 150);
 		this.globalSearchLimit = positiveInt(process.env.GUIDANCE_EVAL_SEARCH_LIMIT, 30);
-		this.runModelLimit = options.maxModelRequests ?? this.globalModelLimit;
-		this.runSearchLimit = options.maxSearchRequests ?? this.globalSearchLimit;
+		// 单次运行上限：显式 options > 文档规定的环境变量 > 全局默认；
+		// 非法值直接报错，不允许静默放大限额。
+		const envRunLimit = optionalPositiveInt(process.env.GUIDANCE_EVAL_MAX_REQUESTS);
+		if (process.env.GUIDANCE_EVAL_MAX_REQUESTS !== undefined && envRunLimit === null) {
+			throw new Error(
+				`GUIDANCE_EVAL_MAX_REQUESTS 配置无效：${process.env.GUIDANCE_EVAL_MAX_REQUESTS}（需要正整数）`
+			);
+		}
+		const envRunSearchLimit = optionalPositiveInt(process.env.GUIDANCE_EVAL_MAX_SEARCH_REQUESTS);
+		if (process.env.GUIDANCE_EVAL_MAX_SEARCH_REQUESTS !== undefined && envRunSearchLimit === null) {
+			throw new Error(
+				`GUIDANCE_EVAL_MAX_SEARCH_REQUESTS 配置无效：${process.env.GUIDANCE_EVAL_MAX_SEARCH_REQUESTS}（需要正整数）`
+			);
+		}
+		this.runModelLimit = options.maxModelRequests ?? envRunLimit ?? this.globalModelLimit;
+		this.runSearchLimit = options.maxSearchRequests ?? envRunSearchLimit ?? this.globalSearchLimit;
 		this.ledger = readLedger();
-		mkdirSync(join(dataDirectory, 'outputs'), { recursive: true });
-		mkdirSync(join(dataDirectory, 'attempts'), { recursive: true });
+		mkdirSync(join(this.dataDir, 'outputs'), { recursive: true });
+		mkdirSync(join(this.dataDir, 'attempts'), { recursive: true });
 	}
 
 	get remainingModelRequests(): number {
@@ -336,7 +366,7 @@ export class EvalSession {
 	recordAttempts(sampleId: string, finishedPayload: Record<string, unknown>): void {
 		// 完整逐 attempt 元数据：只含计数、耗时与错误分类，不含 prompt/密钥/正文。
 		appendFileSync(
-			join(dataDirectory, 'attempts', `attempts-${this.phase}.jsonl`),
+			join(this.dataDir, 'attempts', `attempts-${this.phase}.jsonl`),
 			`${JSON.stringify({ sampleId, ...finishedPayload })}\n`
 		);
 	}
@@ -348,7 +378,7 @@ export class EvalSession {
 		repeat: number,
 		snapshot: GuidanceSnapshot | null
 	): void {
-		const directory = join(dataDirectory, 'outputs', phase);
+		const directory = join(this.dataDir, 'outputs', phase);
 		mkdirSync(directory, { recursive: true });
 		writeFileSync(
 			join(directory, `${arm}-${scenarioId}-r${repeat}.json`),
@@ -370,8 +400,51 @@ export class EvalSession {
 }
 
 function positiveInt(value: string | undefined, fallback: number): number {
+	const parsed = optionalPositiveInt(value);
+	return parsed ?? fallback;
+}
+
+/** 显式值必须是正整数字符串；undefined 合法（未设置），其余返回 null。 */
+function optionalPositiveInt(value: string | undefined): number | null {
+	if (value === undefined) return null;
+	if (!/^\d+$/.test(value.trim())) return null;
 	const parsed = Number(value);
-	return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+	return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+/**
+ * 与 app-context.getCaseService 相同的 runtime 依赖工厂：
+ * 评测和应用必须共用一套接线（含 policyMode 与缓存开关），避免评测路径漂移。
+ */
+export function createEvalRuntimeDependencies(options: {
+	repository: ReturnType<typeof isolatedRepository>;
+	model: ModelClient | null;
+	policy: {
+		modelTimeoutMs: number;
+		runBudgetMs: number;
+		maxModelRetries: number;
+		maxSearches: number;
+		searchTimeoutMs: number;
+		maxModelSteps: number;
+		mode: 'legacy' | 'fast';
+	};
+	zhihu: ZhihuClient;
+	/** 评测 A/B 默认禁用缓存；缓存收益测试显式传一份实例。 */
+	searchCache?: SearchCache | null;
+}): ReturnType<typeof createGuidanceRuntime> {
+	return createGuidanceRuntime({
+		repository: options.repository,
+		model: options.model,
+		zhihu: options.zhihu,
+		modelTimeoutMs: options.policy.modelTimeoutMs,
+		runBudgetMs: options.policy.runBudgetMs,
+		maxModelRetries: options.policy.maxModelRetries,
+		maxSearches: options.policy.maxSearches,
+		searchTimeoutMs: options.policy.searchTimeoutMs,
+		maxModelSteps: options.policy.maxModelSteps,
+		policyMode: options.policy.mode,
+		searchCache: options.searchCache === null ? undefined : options.searchCache
+	});
 }
 
 export interface MaterialisedCase {

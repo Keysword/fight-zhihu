@@ -104,3 +104,59 @@ describe('fast backoff', () => {
 		expect(fastBackoffDelayMs(10_100)).toBeNull();
 	});
 });
+
+describe('count-type overrides accept zero and reject non-integers', () => {
+	it('keeps GUIDANCE_MODEL_MAX_RETRIES=0 as an explicit "no retry" setting in legacy mode', () => {
+		const policy = resolveGuidancePolicy({ GUIDANCE_MODEL_MAX_RETRIES: '0' });
+		expect(policy.maxModelRetries).toBe(0);
+	});
+
+	it('accepts maxModelRetries=0 under fast policy with strict numerics', () => {
+		const policy = resolveGuidancePolicy(
+			{ GUIDANCE_POLICY: 'fast', GUIDANCE_MODEL_MAX_RETRIES: '0' },
+			{ strictNumeric: true }
+		);
+		expect(policy.maxModelRetries).toBe(0);
+	});
+
+	it('accepts maxSearches=0 to disable searches entirely', () => {
+		const policy = resolveGuidancePolicy({ GUIDANCE_MAX_SEARCHES: '0' });
+		expect(policy.maxSearches).toBe(0);
+	});
+
+	it('never floors fractional counts: strict mode throws, legacy falls back to the default', () => {
+		expect(() =>
+			resolveGuidancePolicy({ GUIDANCE_MODEL_MAX_RETRIES: '1.5' }, { strictNumeric: true })
+		).toThrow(GuidancePolicyConfigurationError);
+		// 分数在 legacy 宽容模式下回退默认，而不是 floor 成 1。
+		const lenient = resolveGuidancePolicy({ GUIDANCE_MODEL_MAX_RETRIES: '2.9' });
+		expect(lenient.maxModelRetries).toBe(2);
+	});
+
+	it('rejects negative and non-numeric counts', () => {
+		expect(() =>
+			resolveGuidancePolicy({ GUIDANCE_POLICY: 'fast', GUIDANCE_MAX_SEARCHES: '-1' })
+		).toThrow(GuidancePolicyConfigurationError);
+		expect(() =>
+			resolveGuidancePolicy({ GUIDANCE_POLICY: 'fast', GUIDANCE_MODEL_MAX_RETRIES: 'twice' })
+		).toThrow(GuidancePolicyConfigurationError);
+	});
+
+	it('still requires positive durations and rejects zero or fractional time values', () => {
+		expect(() =>
+			resolveGuidancePolicy({ GUIDANCE_POLICY: 'fast', GUIDANCE_RUN_BUDGET_MS: '0' })
+		).toThrow(GuidancePolicyConfigurationError);
+		expect(() =>
+			resolveGuidancePolicy({ GUIDANCE_RUN_BUDGET_MS: '0.5' }, { strictNumeric: true })
+		).toThrow(GuidancePolicyConfigurationError);
+		expect(() =>
+			resolveGuidancePolicy({ GUIDANCE_MODEL_TIMEOUT_MS: '0' }, { strictNumeric: true })
+		).toThrow(GuidancePolicyConfigurationError);
+	});
+
+	it('keeps zero model steps invalid because a run without steps cannot produce guidance', () => {
+		expect(() =>
+			resolveGuidancePolicy({ GUIDANCE_MAX_MODEL_STEPS: '0' }, { strictNumeric: true })
+		).toThrow(GuidancePolicyConfigurationError);
+	});
+});

@@ -22,7 +22,14 @@
 			"caseId": "eval-long-history",
 			"derivedFrom": "no-contact-channel / user-corrects-role（扩展为 20 条历史输入）"
 		},
-		{ "caseId": "eval-two-goals-need-question", "derivedFrom": "新建：两个互不相干目标必须追问" }
+		{
+			"caseId": "eval-two-goals-need-question",
+			"derivedFrom": "新建：两个互不相干目标必须追问"
+		},
+		{
+			"caseId": "eval-zhihu-experience-requested",
+			"derivedFrom": "新建：用户明确要求查找知乎经验的检索正例"
+		}
 	],
 	"cases": [
 		{
@@ -126,26 +133,86 @@
 				}
 			],
 			"inputs": [
-				{ "kind": "constraint", "content": "不能直接联系物业，之前因账号问题投诉过物业。" },
-				{ "kind": "context", "content": "第 2 条：尝试重启光猫，指示灯正常。" },
-				{ "kind": "context", "content": "第 3 条：室友网络正常，只有我的端口不通。" },
-				{ "kind": "context", "content": "第 4 条：信息中心值班电话在工作时间无人接听。" },
-				{ "kind": "context", "content": "第 5 条：群里有人说报修要在内网门户提交。" },
-				{ "kind": "context", "content": "第 6 条：内网门户入口今天维护，暂时打不开。" },
-				{ "kind": "context", "content": "第 7 条：之前把光猫序列号拍照留档了。" },
-				{ "kind": "context", "content": "第 8 条：室友建议直接去信息中心前台。" },
-				{ "kind": "context", "content": "第 9 条：前台位置在行政楼 2 楼。" },
-				{ "kind": "context", "content": "第 10 条：明天上午有会，只有下午有空。" },
-				{ "kind": "context", "content": "第 11 条：之前在前台排过一次队，大约 20 分钟。" },
-				{ "kind": "context", "content": "第 12 条：内网门户预计明天恢复。" },
-				{ "kind": "context", "content": "第 13 条：同事说也可以让辅导员代为反馈。" },
-				{ "kind": "context", "content": "第 14 条：辅导员今天在校。" },
-				{ "kind": "context", "content": "第 15 条：之前投诉物业的事已由信息中心协调处理完毕。" },
-				{ "kind": "context", "content": "第 16 条：信息中心报修需要提供房间号和联系方式。" },
-				{ "kind": "context", "content": "第 17 条：房间号是 5 号楼 302。" },
-				{ "kind": "context", "content": "第 18 条：不太想再拖过这周。" },
-				{ "kind": "context", "content": "第 19 条：室友愿意帮忙陪同去前台。" },
-				{ "kind": "question", "content": "现在到底应该走内网门户、前台还是辅导员？" }
+				{
+					"kind": "constraint",
+					"content": "不能直接联系物业，之前因账号问题投诉过物业。"
+				},
+				{
+					"kind": "context",
+					"content": "第 2 条：尝试重启光猫，指示灯正常。"
+				},
+				{
+					"kind": "context",
+					"content": "第 3 条：室友网络正常，只有我的端口不通。"
+				},
+				{
+					"kind": "context",
+					"content": "第 4 条：信息中心值班电话在工作时间无人接听。"
+				},
+				{
+					"kind": "context",
+					"content": "第 5 条：群里有人说报修要在内网门户提交。"
+				},
+				{
+					"kind": "context",
+					"content": "第 6 条：内网门户入口今天维护，暂时打不开。"
+				},
+				{
+					"kind": "context",
+					"content": "第 7 条：之前把光猫序列号拍照留档了。"
+				},
+				{
+					"kind": "context",
+					"content": "第 8 条：室友建议直接去信息中心前台。"
+				},
+				{
+					"kind": "context",
+					"content": "第 9 条：前台位置在行政楼 2 楼。"
+				},
+				{
+					"kind": "context",
+					"content": "第 10 条：明天上午有会，只有下午有空。"
+				},
+				{
+					"kind": "context",
+					"content": "第 11 条：之前在前台排过一次队，大约 20 分钟。"
+				},
+				{
+					"kind": "context",
+					"content": "第 12 条：内网门户预计明天恢复。"
+				},
+				{
+					"kind": "context",
+					"content": "第 13 条：同事说也可以让辅导员代为反馈。"
+				},
+				{
+					"kind": "context",
+					"content": "第 14 条：辅导员今天在校。"
+				},
+				{
+					"kind": "context",
+					"content": "第 15 条：之前投诉物业的事已由信息中心协调处理完毕。"
+				},
+				{
+					"kind": "context",
+					"content": "第 16 条：信息中心报修需要提供房间号和联系方式。"
+				},
+				{
+					"kind": "context",
+					"content": "第 17 条：房间号是 5 号楼 302。"
+				},
+				{
+					"kind": "context",
+					"content": "第 18 条：不太想再拖过这周。"
+				},
+				{
+					"kind": "context",
+					"content": "第 19 条：室友愿意帮忙陪同去前台。"
+				},
+				{
+					"kind": "question",
+					"content": "现在到底应该走内网门户、前台还是辅导员？"
+				}
 			],
 			"shouldFocus": [
 				"仍然尊重“不能直接联系物业”这一最早限制",
@@ -183,6 +250,30 @@
 				"把住宿调整归给财务系统",
 				"跳过追问直接给两个目标的完整指导"
 			]
+		},
+		{
+			"id": "eval-zhihu-experience-requested",
+			"title": "用户明确要求查知乎经验",
+			"goal": "确认第一次在园区宿舍入住时如何领取钥匙。",
+			"confusion": "不知道有没有人分享过类似经验。",
+			"evidence": [
+				{
+					"sourceLabel": "通知短信",
+					"content": "请携带身份证到园区服务中心办理入住手续。"
+				}
+			],
+			"inputs": [
+				{
+					"kind": "question",
+					"content": "帮我查一下知乎上有没有人分享过园区宿舍入住领钥匙的经验？"
+				}
+			],
+			"shouldFocus": [
+				"用户明确要求检索时应尝试一次知乎检索",
+				"检索结果只作为经验启发，不证明园区领取流程",
+				"检索失败时明确说明未获取外部结果"
+			],
+			"mustAvoid": ["在未检索的情况下声称已查证知乎经验", "把外部经验写成园区确定流程"]
 		}
 	]
 }

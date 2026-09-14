@@ -10,6 +10,7 @@ import {
 	type ModelConfiguration
 } from '$lib/server/agent/model-client';
 import { resolveGuidancePolicy } from '$lib/server/agent/guidance-policy';
+import { createSearchCache } from '$lib/server/agent/search-cache';
 import { createSdkModelClient, type SdkConfiguration } from '$lib/server/agent/sdk-model-client';
 import { createCaseRepository } from '$lib/server/cases/repository';
 import { createCaseService, type CaseService } from '$lib/server/services/case-service';
@@ -136,6 +137,7 @@ export function getCaseService(): CaseService {
 		? createZhihuClient({ accessSecret: env.ZHIHU_ACCESS_SECRET })
 		: unavailableZhihuClient();
 	const runner = createAgentRuntime({ repository, model, zhihu });
+	// 单案例有界短期搜索缓存随 service 生命周期创建；评测 A/B 通过不注入来显式禁用。
 	const guidanceRunner = createGuidanceRuntime({
 		repository,
 		model,
@@ -146,7 +148,8 @@ export function getCaseService(): CaseService {
 		maxSearches: policy.maxSearches,
 		searchTimeoutMs: policy.searchTimeoutMs,
 		maxModelSteps: policy.maxModelSteps,
-		policyMode: policy.mode
+		policyMode: policy.mode,
+		searchCache: createSearchCache()
 	});
 	service = createCaseService({
 		repository,

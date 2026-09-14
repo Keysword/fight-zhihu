@@ -749,3 +749,119 @@ describe('case service', () => {
 		secondLegacyProcess.repository.close();
 	});
 });
+
+describe('service factory wires the search cache into the real runtime', () => {
+	it('performs one underlying search for repeated identical queries across two runs', async () => {
+		const { createCaseRepository: createRepo } = await import('$lib/server/cases/repository');
+		const { createCaseService } = await import('./case-service');
+		const { createGuidanceRuntime } = await import('$lib/server/agent/guidance-runtime');
+		const { createSearchCache } = await import('$lib/server/agent/search-cache');
+
+		const directory = mkdtempSync(join(tmpdir(), 'service-cache-'));
+		directories.push(directory);
+		const repository = createRepo(join(directory, 'cache.sqlite'));
+		const clue = {
+			id: 'zhihu-integration-1',
+			title: '相似经验',
+			excerpt: '可分别确认申请与安排。',
+			url: 'https://example.com/clue',
+			author: '外部作者',
+			editedAt: null,
+			authorityLevel: null,
+			source: 'zhihu' as const,
+			relevance: '补充核实方向',
+			warning: '外部经验不是本案例事实'
+		};
+		const searchZhihu = vi.fn(async () => [clue]);
+		const searchGlobal = vi.fn(async () => []);
+		const scripted = [
+			JSON.stringify({ type: 'search_zhihu', query: '新人 入住 经验', count: 3 }),
+			JSON.stringify({
+				type: 'provide_guidance',
+				guidance: {
+					understanding: {
+						summary: '第一版理解：申请不等于落实。',
+						openPoint: null,
+						sources: [{ kind: 'external', id: clue.id }]
+					},
+					communicationChecks: [],
+					nextStep: null,
+					question: null,
+					changeSummary: null
+				}
+			}),
+			JSON.stringify({ type: 'search_zhihu', query: '新人 入住 经验', count: 3 }),
+			JSON.stringify({
+				type: 'provide_guidance',
+				guidance: {
+					understanding: {
+						summary: '第二版理解：申请不等于落实，已核对检索经验。',
+						openPoint: null,
+						sources: [{ kind: 'external', id: clue.id }]
+					},
+					communicationChecks: [],
+					nextStep: null,
+					question: null,
+					changeSummary: '更新后的理解。'
+				}
+			})
+		];
+		let call = 0;
+		const model = {
+			complete: vi.fn(async () => {
+				const response = scripted[Math.min(call, scripted.length - 1)];
+				call += 1;
+				return response;
+			})
+		};
+		const zhihu = { searchZhihu, searchGlobal };
+		// 与 app-context.getCaseService 相同的工厂接线：缓存注入真实 runtime。
+		const guidanceRunner = createGuidanceRuntime({
+			repository,
+			model: model as never,
+			zhihu: zhihu as never,
+			policyMode: 'legacy',
+			searchCache: createSearchCache()
+		});
+		const service = createCaseService({
+			repository,
+			runner: { run: vi.fn() },
+			guidanceRunner,
+			configuration: {
+				guidanceMode: true,
+				modelConfigured: true,
+				zhihuConfigured: true,
+				version: 'test'
+			}
+		});
+
+		const created = service.createCase({
+			title: '缓存接线案例',
+			goal: '验证重复检索只放行一次底层请求',
+			confusion: '申请和落实是否一致？'
+		});
+		const first = await service.runGuidance(created.case.id);
+		expect(first.run.outcome).toBe('ready');
+		// 用户补充输入 → 新一轮运行请求同一检索词 → 命中缓存。
+		service.appendCaseInput(created.case.id, {
+			kind: 'context',
+			content: '补充：明早出发。',
+			guidanceId: null,
+			requestId: crypto.randomUUID(),
+			replacements: []
+		});
+		const second = await service.runGuidance(created.case.id);
+		expect(second.run.outcome).toBe('ready');
+
+		expect(searchZhihu).toHaveBeenCalledTimes(1);
+		expect(model.complete).toHaveBeenCalledTimes(4);
+		// 两次运行的指导都通过原引用校验，缓存注册的来源可引用。
+		expect(first.run.guidance?.draft.understanding.sources[0]?.id).toBe(clue.id);
+		expect(second.run.guidance?.draft.understanding.sources[0]?.id).toBe(clue.id);
+		const secondFinished = repository
+			.listEvents(created.case.id)
+			.filter((event) => event.type === 'guidance.run.finished')
+			.at(-1)?.payload as { searches?: Array<{ cacheHit?: boolean }> };
+		expect(secondFinished.searches?.[0]?.cacheHit).toBe(true);
+	});
+});

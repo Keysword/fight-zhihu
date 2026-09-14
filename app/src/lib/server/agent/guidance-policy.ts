@@ -41,12 +41,15 @@ export class GuidancePolicyConfigurationError extends Error {
 	}
 }
 
-function parsePositiveInteger(value: string | undefined): number | null {
+function parseIntegerAtLeast(value: string | undefined, minimum: number): number | null {
+	if (!/^\d+$/.test(String(value).trim())) return null;
 	const parsed = Number(value);
-	return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : null;
+	// 只接受整数字符串：小数、"3s" 之类的值不允许被静默 floor。
+	if (!Number.isInteger(parsed) || parsed < minimum) return null;
+	return parsed;
 }
 
-function override(
+function overrideCount(
 	values: Record<string, string | undefined>,
 	name: string,
 	fallback: number,
@@ -55,7 +58,27 @@ function override(
 ): number {
 	const raw = values[name];
 	if (raw === undefined || raw === '') return fallback;
-	const parsed = parsePositiveInteger(raw);
+	// 次数类配置允许 0（关闭重试/搜索是合法的既有语义）。
+	const parsed = parseIntegerAtLeast(raw, 0);
+	if (parsed === null) {
+		if (mode === 'fast' || strictNumeric) {
+			throw new GuidancePolicyConfigurationError(`${name} 配置无效：${raw}（需要非负整数）`);
+		}
+		return fallback;
+	}
+	return parsed;
+}
+
+function overrideDuration(
+	values: Record<string, string | undefined>,
+	name: string,
+	fallback: number,
+	mode: GuidancePolicyMode,
+	strictNumeric: boolean
+): number {
+	const raw = values[name];
+	if (raw === undefined || raw === '') return fallback;
+	const parsed = parseIntegerAtLeast(raw, 1);
 	if (parsed === null) {
 		// 非法显式覆盖在 fast/sdk 配置下报明确配置错误，禁止静默回退到更慢路由。
 		if (mode === 'fast' || strictNumeric) {
@@ -86,30 +109,42 @@ export function resolveGuidancePolicy(
 	const base = mode === 'fast' ? FAST_GUIDANCE_POLICY : LEGACY_GUIDANCE_POLICY;
 	return {
 		mode,
-		runBudgetMs: override(values, 'GUIDANCE_RUN_BUDGET_MS', base.runBudgetMs, mode, strictNumeric),
-		modelTimeoutMs: override(
+		runBudgetMs: overrideDuration(
+			values,
+			'GUIDANCE_RUN_BUDGET_MS',
+			base.runBudgetMs,
+			mode,
+			strictNumeric
+		),
+		modelTimeoutMs: overrideDuration(
 			values,
 			'GUIDANCE_MODEL_TIMEOUT_MS',
 			base.modelTimeoutMs,
 			mode,
 			strictNumeric
 		),
-		maxModelRetries: override(
+		maxModelRetries: overrideCount(
 			values,
 			'GUIDANCE_MODEL_MAX_RETRIES',
 			base.maxModelRetries,
 			mode,
 			strictNumeric
 		),
-		searchTimeoutMs: override(
+		searchTimeoutMs: overrideDuration(
 			values,
 			'GUIDANCE_SEARCH_TIMEOUT_MS',
 			base.searchTimeoutMs,
 			mode,
 			strictNumeric
 		),
-		maxSearches: override(values, 'GUIDANCE_MAX_SEARCHES', base.maxSearches, mode, strictNumeric),
-		maxModelSteps: override(
+		maxSearches: overrideCount(
+			values,
+			'GUIDANCE_MAX_SEARCHES',
+			base.maxSearches,
+			mode,
+			strictNumeric
+		),
+		maxModelSteps: overrideDuration(
 			values,
 			'GUIDANCE_MAX_MODEL_STEPS',
 			base.maxModelSteps,
