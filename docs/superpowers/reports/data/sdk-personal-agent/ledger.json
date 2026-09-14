@@ -1,6 +1,7 @@
 {
-  "modelRequests": 94,
-  "searchRequests": 0,
-  "updatedAt": "2026-09-13T18:12:37.955Z",
-  "diagnosisNotes": "key1(（脱敏代号）) 对 Deepseek-v4-flash 返回 401；key2(（脱敏代号）) 有效；模型名区分大小写"
+  "modelRequests": 150,
+  "searchRequests": 3,
+  "updatedAt": "2026-09-14T02:54:02.773Z",
+  "diagnosisNotes": "key1(（脱敏代号）) 对 Deepseek-v4-flash 返回 401；key2(（脱敏代号）) 有效；模型名区分大小写",
+  "reworkBoundary": "experiment B rerun (full fast policy) and experiment C start from commit 6cf3214"
 }

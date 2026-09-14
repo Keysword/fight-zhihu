@@ -1,0 +1,27 @@
+{
+  "understanding": {
+    "summary": "房间号、领取地点和时间都已明确，预计17:20到达在09:00—18:00领取窗口内，直接按通知前往即可。",
+    "openPoint": null,
+    "sources": [
+      {
+        "kind": "evidence",
+        "id": "e11e2366-daf0-4e9c-a25e-1a329b4f3af9"
+      },
+      {
+        "kind": "input",
+        "id": "b0b7c40e-9968-4b7d-a946-89695524a789"
+      }
+    ]
+  },
+  "communicationChecks": [],
+  "nextStep": {
+    "kind": "inspect",
+    "instruction": "明天到达后携带身份证前往3号楼412，并在09:00—18:00内到前台领取钥匙。",
+    "why": "材料已明确房间和领取安排，且你的到达时间在领取窗口内，无需调整行程。",
+    "contact": null,
+    "message": null,
+    "branches": []
+  },
+  "question": null,
+  "changeSummary": null
+}

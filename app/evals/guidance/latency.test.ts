@@ -443,6 +443,7 @@ phaseSuite('search', () => {
 					firstContentMs: null,
 					errorCode: result.error?.code ?? null
 				});
+				session.recordAttempts(`sdk-fast-realzhihu-${entry.scenarioId}-r${repeat}`, payload);
 				session.recordOutput(
 					'search',
 					'sdk-fast-realzhihu',

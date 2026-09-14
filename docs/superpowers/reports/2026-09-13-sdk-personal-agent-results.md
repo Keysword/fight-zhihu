@@ -8,16 +8,16 @@
 
 ## 1. 提交列表
 
-| 提交 | 内容 |
-| --- | --- |
-| `2c61193` | docs: record SDK latency implementation baseline（基线报告 + 方案入库） |
-| `24e8338` | feat: add explicit SDK model transport（openai SDK 7.15.0、sdk-model-client、AGENT_TRANSPORT） |
-| `69b948b` | feat: measure model transport and run latency（传输层观测、queueMs、评测入口与固定场景） |
-| `4393ea6` | feat: bound personal agent execution and retries（guidance-policy、整轮截止、fast 重试） |
-| `be2986c` | feat: bound and reuse contextual searches（搜索限时/取消、单案例有界缓存、检索原则） |
-| `b13d2fe` | feat: supersede stale guidance and deduplicate context（新版替代旧运行、上下文去重、OpenCode 后台清理） |
-| `754843c` | test: cover SDK personal agent workflows（SDK/SSE E2E 夹具、guided-sdk 项目、全门禁） |
-| （本次提交） | docs: report SDK personal agent latency evaluation（本报告、数据、评分、文档） |
+| 提交         | 内容                                                                                                    |
+| ------------ | ------------------------------------------------------------------------------------------------------- |
+| `2c61193`    | docs: record SDK latency implementation baseline（基线报告 + 方案入库）                                 |
+| `24e8338`    | feat: add explicit SDK model transport（openai SDK 7.15.0、sdk-model-client、AGENT_TRANSPORT）          |
+| `69b948b`    | feat: measure model transport and run latency（传输层观测、queueMs、评测入口与固定场景）                |
+| `4393ea6`    | feat: bound personal agent execution and retries（guidance-policy、整轮截止、fast 重试）                |
+| `be2986c`    | feat: bound and reuse contextual searches（搜索限时/取消、单案例有界缓存、检索原则）                    |
+| `b13d2fe`    | feat: supersede stale guidance and deduplicate context（新版替代旧运行、上下文去重、OpenCode 后台清理） |
+| `754843c`    | test: cover SDK personal agent workflows（SDK/SSE E2E 夹具、guided-sdk 项目、全门禁）                   |
+| （本次提交） | docs: report SDK personal agent latency evaluation（本报告、数据、评分、文档）                          |
 
 ## 2. 实施内容（对照方案）
 
@@ -31,14 +31,14 @@
 
 ## 3. 工程门禁实测（终点提交）
 
-| 命令 | 结果 |
-| --- | --- |
-| `pnpm format:check` | PASS |
-| `pnpm lint` | PASS（0 error） |
-| `pnpm check` | PASS（0 errors, 0 warnings） |
-| `pnpm test:unit -- --run` | PASS（29 文件 / 266 用例，0 失败；不含真实模型访问，评测入口默认 describe.skip 且不在单测 include 内） |
-| `pnpm build` | PASS |
-| `pnpm exec playwright test` | PASS（24 用例：legacy 5 + guided 8 + guided-sdk 11…实际 8+8+8，三项目全部通过，约 1.8 分钟） |
+| 命令                        | 结果                                                                                                   |
+| --------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `pnpm format:check`         | PASS                                                                                                   |
+| `pnpm lint`                 | PASS（0 error）                                                                                        |
+| `pnpm check`                | PASS（0 errors, 0 warnings）                                                                           |
+| `pnpm test:unit -- --run`   | PASS（29 文件 / 266 用例，0 失败；不含真实模型访问，评测入口默认 describe.skip 且不在单测 include 内） |
+| `pnpm build`                | PASS                                                                                                   |
+| `pnpm exec playwright test` | PASS（24 用例：legacy 5 + guided 8 + guided-sdk 11…实际 8+8+8，三项目全部通过，约 1.8 分钟）           |
 
 基线（0217d2a）当时为 207 单测 / 11 E2E 全绿；终点 266 单测 / 24 E2E 全绿，无遗留失败。
 
@@ -54,26 +54,26 @@
 
 ### 实验 A：仅比较调用链（冻结 prompt 单次请求，n=18/臂）
 
-| 指标 | legacy-http | sdk（非流式） |
-| --- | --- | --- |
-| 协议通过 | 16/18（2 次 JSON 未闭合） | 14/18（4 次 JSON 未闭合） |
-| 成功 p50 | 5593 ms | 5011 ms |
-| 成功 p95 | 6990 ms | 6590 ms |
-| 最大 | 7270 ms | 9726 ms |
-| 真实请求数 | 18（无重试叠加） | 18（无重试叠加） |
+| 指标       | legacy-http               | sdk（非流式）             |
+| ---------- | ------------------------- | ------------------------- |
+| 协议通过   | 16/18（2 次 JSON 未闭合） | 14/18（4 次 JSON 未闭合） |
+| 成功 p50   | 5593 ms                   | 5011 ms                   |
+| 成功 p95   | 6990 ms                   | 6590 ms                   |
+| 最大       | 7270 ms                   | 9726 ms                   |
+| 真实请求数 | 18（无重试叠加）          | 18（无重试叠加）          |
 
 SDK 直连 p50 快约 10%、p95 快约 6%；样本量小（18），只能作探索性结论：该端点的中间层开销本身很小，与 OpenCode 时代的 90s 级延迟差异主要来自中间服务与模型路径，而非本端点。
 
 ### 实验 B：专用策略对照（SDK 同一传输，端到端，n=12/臂）
 
-| 指标 | legacy 策略 | fast 策略 |
-| --- | --- | --- |
-| 成功（ready/needs_input） | 11/12（91.7%） | 11/12（91.7%） |
-| 失败 | 1（GUIDANCE_INVALID） | 1（GUIDANCE_INVALID） |
-| 成功 p50 | 9961 ms | 13023 ms |
-| 成功 p95 | 17181 ms | 23728 ms |
-| 最大 | 17181 ms | 23728 ms（全部 < 60s 预算） |
-| 修复次数合计 | 10 | 10 |
+| 指标                      | legacy 策略           | fast 策略                   |
+| ------------------------- | --------------------- | --------------------------- |
+| 成功（ready/needs_input） | 11/12（91.7%）        | 11/12（91.7%）              |
+| 失败                      | 1（GUIDANCE_INVALID） | 1（GUIDANCE_INVALID）       |
+| 成功 p50                  | 9961 ms               | 13023 ms                    |
+| 成功 p95                  | 17181 ms              | 23728 ms                    |
+| 最大                      | 17181 ms              | 23728 ms（全部 < 60s 预算） |
+| 修复次数合计              | 10                    | 10                          |
 
 两臂各有一次 `GUIDANCE_INVALID`（模型两次输出不合规 JSON 后按方案明确失败，不同场景：legacy 在"两个目标"、fast 在"条件否定"）；取消/超时 0；搜索 0（合成场景未触发真实检索动作）。
 
@@ -126,3 +126,48 @@ SDK 直连 p50 快约 10%、p95 快约 6%；样本量小（18），只能作探�
 部署：本轮未部署
 产物：本报告、docs/superpowers/reports/data/sdk-personal-agent/{ledger.json,summary.json,results-*.jsonl,attempts/,outputs/,blind/,quality-*.json}、复现命令见 app/evals/guidance/README.md
 ```
+
+---
+
+# 2026-09-14 返工补记（复核报告 2026-09-14-sdk-personal-agent-review.md 的修复与重测）
+
+## 返工修复（commit `6cf3214`）
+
+| 发现                                   | 修复                                                                                                                                                   | 验证                                                                                                             |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| F1 fast 评测未传 policyMode            | 提取 `createEvalRuntimeDependencies` 共享工厂（harness.ts），显式传 `policyMode: policy.mode`；评测与应用同一接线                                      | 契约测试：fast 模式超时恰好 1 次调用；legacy 模式 3 次                                                           |
+| F2 搜索缓存未注入应用                  | `getCaseService()` 创建 `createSearchCache()` 注入 runtime                                                                                             | 集成测试：真实 service 两次运行同一检索词，底层 `searchZhihu` 只调 1 次，第二轮 `cacheHit: true`，两轮引用均有效 |
+| F3 重试次数 0 被判非法                 | 次数类（retries/maxSearches）走非负整数解析；时间/步数要求正整数；小数严格模式报错、legacy 回退默认不 floor                                            | 边界测试：`GUIDANCE_MODEL_MAX_RETRIES=0` 在 legacy/strict 下均为 0；`maxSearches=0` 合法；负值/小数/非数字拒绝   |
+| F4 `GUIDANCE_EVAL_MAX_REQUESTS` 未实现 | 单次上限取 options > 环境变量 > 全局默认的最小值；非法值报错；ledger 支持测试隔离目录                                                                  | 离线 ledger 测试 6 条：限额 1 生效、非法值报错、跨会话累计不可绕过、失败也计数、搜索预算独立                     |
+| F5 知乎评测无正例无断言                | 新增固定场景 `eval-zhihu-experience-requested`（明确要求查知乎）；`expectSearch` 真实核对搜索次数；counted 包装透传 `SearchCallOptions`；补记 attempts | 离线跑通；真实执行见下                                                                                           |
+
+## 重测结果
+
+### 实验 C（真实知乎，commit 6cf3214，密钥已配置）
+
+- 正例（用户明确要求查知乎经验）× 3：**3/3 发起真实检索**（每轮恰好 1 次搜索请求，30 次搜索预算用 3 次）；1/3 完成可用指导，2/3 模型在检索后的修复轮输出不稳定而失败（fast 不重试 payload 失败，属速度-稳健性权衡）。
+- 负例（普通材料解释）× 3：**0 次搜索**——非必要检索没有发生，检索原则生效。
+- 检索失败时输出未声称已查证（断言通过）。
+
+### 实验 B 重跑（full fast，commit 6cf3214，n=13/臂）
+
+| 指标     | legacy 策略 | fast 策略（完整）           |
+| -------- | ----------- | --------------------------- |
+| 成功     | 10/13       | 9/13                        |
+| 成功 p50 | 11194 ms    | 7382 ms                     |
+| 成功 p95 | 22987 ms    | 24660 ms                    |
+| 最大     | 62665 ms    | 30512 ms（全部 < 60s 预算） |
+
+- 修复后 fast p50（7.4s）**快于** legacy 策略（11.2s）；fast 最坏等待减半（30.5s vs 62.7s，legacy 一例逼近 240s 预算内 63s）。
+- fast 成功率低 1 例：4 次失败均为"首次输出不合协议 → 修复调用立即返回空正文（payload，不重试）"；legacy 凭 2 次重试存活。已离线验证取消归因正确（aborted→cancelled），该现象为模型修复轮不稳定输出，非接线缺陷。
+- 修复前（754843c）的实验 B 数据保留为"F1 缺陷下 fast 标签样本"，不覆盖、不混入（summary.json 分列）。
+
+### 归因纠正（复核报告第 4 节的采纳）
+
+1. 实验 A 只是同一新端点的手写 fetch vs SDK 对照，**不能**据此判定历史 90 秒由 OpenCode 服务造成——原链路基线臂在评测会话中缺失，"相对原应用基线 p50 下降 ≥30%"的目标仍未完成对照。
+2. "约 30% 变慢是噪声"的说法撤回；修复后完整 fast 策略实测 p50 快约 34%，但样本量 13，仍为探索性结论。
+3. 剩余预算：模型请求 150/150 已用尽，搜索 3/30；如需继续补 OpenCode 基线对照需用户追加预算授权。
+
+## 部署
+
+按用户指示，返工修复后直接部署（legacy 默认策略不变，仅代码与接线更新），部署记录见 `deploy/README.md` 与发布版本号。

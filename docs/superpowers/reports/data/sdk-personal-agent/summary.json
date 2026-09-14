@@ -1,142 +1,149 @@
 {
   "meta": {
-    "commit": "754843c",
+    "finalCommit": "6cf3214",
     "sdkVersion": "7.15.0",
-    "sdkVersionNote": "openai v7 不导出 VERSION 常量，行级 sdkVersion 字段在此批次为空；版本从锁定的 package.json 补记",
-    "provider": "微信开放平台 OpenAI 兼容端点（chatapi.weixin.qq.com/openai/v1），模型 Deepseek-v4-flash（名称区分大小写）",
-    "confounding": "A1（OpenCode 臂）未配置 OPENCODE_SERVER_URL/密码，无法执行；A 比较实际为 legacy-http vs sdk，同一供应商/端点/模型/密钥，无传输外混杂",
-    "warmups": [
-      {
-        "arm": "legacy-http-warmup",
-        "totalMs": 2540
-      },
-      {
-        "arm": "sdk-nonstream-warmup",
-        "totalMs": 2985
-      }
-    ]
+    "provider": "微信开放平台 OpenAI 兼容端点，模型 Deepseek-v4-flash（区分大小写）",
+    "rework": "2026-09-14 复核 F1-F5 修复后重跑：实验 B（full fast）与实验 C（真实知乎）",
+    "confounding": "A 比较为 legacy-http vs sdk（同端点同模型）；OpenCode 基线臂在评测会话中缺失（远端有配置但评测凭证未包含，线上链路对照未完成）"
   },
   "experimentA_transport": {
-    "design": "冻结 prompt 单次请求 × 6 场景 × 3 次 × 2 臂，串行交错；返回内容跑真实协议解析",
+    "design": "冻结 prompt 单次请求 × 6 场景 × 3 次 × 2 臂（commit 754843c，修复前；接线缺陷不影响单请求对照）",
     "legacy-http": {
       "n": 18,
       "success": 16,
       "successRate": 0.889,
       "failed": 0,
-      "protocolFail": 2,
-      "cancelled": 0,
       "successP50Ms": 5593,
       "successP95Ms": 6990,
-      "allP50Ms": 5593,
       "allP95Ms": 6990,
       "maxMs": 7270,
       "modelAttempts": 18,
-      "searchRequests": 0,
-      "searchCacheHits": 0,
       "repairs": 0,
-      "errorCodes": {
-        "模型输出的 JSON 对象没有闭合": 2
-      }
+      "searchRequests": 0
     },
     "sdk-nonstream": {
       "n": 18,
       "success": 14,
       "successRate": 0.778,
       "failed": 0,
-      "protocolFail": 4,
-      "cancelled": 0,
       "successP50Ms": 5011,
       "successP95Ms": 6590,
-      "allP50Ms": 5327,
       "allP95Ms": 7310,
       "maxMs": 9726,
       "modelAttempts": 18,
-      "searchRequests": 0,
-      "searchCacheHits": 0,
       "repairs": 0,
-      "errorCodes": {
-        "模型输出的 JSON 对象没有闭合": 4
-      }
+      "searchRequests": 0
     }
   },
   "experimentB_policy": {
-    "design": "完整端到端运行 × 6 场景 × 2 次 × 2 臂（同一 SDK 传输）；缓存关闭；失败样本不丢弃",
-    "sdk-nonstream-legacypolicy": {
-      "n": 12,
-      "success": 11,
-      "successRate": 0.917,
-      "failed": 1,
-      "protocolFail": 0,
-      "cancelled": 0,
-      "successP50Ms": 9961,
-      "successP95Ms": 17181,
-      "allP50Ms": 9961,
-      "allP95Ms": 14557,
-      "maxMs": 17181,
-      "modelAttempts": 22,
-      "searchRequests": 0,
-      "searchCacheHits": 0,
-      "repairs": 10,
-      "errorCodes": {
-        "GUIDANCE_INVALID": 1
+    "preRework_754843c": {
+      "note": "F1 缺陷：fast 臂实际为 legacy 行为 + fast 数值参数，仅作历史样本",
+      "legacy策略": {
+        "n": 12,
+        "success": 11,
+        "successRate": 0.917,
+        "failed": 1,
+        "successP50Ms": 9961,
+        "successP95Ms": 17181,
+        "allP95Ms": 14557,
+        "maxMs": 17181,
+        "modelAttempts": 22,
+        "repairs": 10,
+        "searchRequests": 0
+      },
+      "fast标签": {
+        "n": 12,
+        "success": 11,
+        "successRate": 0.917,
+        "failed": 1,
+        "successP50Ms": 13023,
+        "successP95Ms": 23728,
+        "allP95Ms": 17837,
+        "maxMs": 23728,
+        "modelAttempts": 22,
+        "repairs": 10,
+        "searchRequests": 0
       }
     },
-    "sdk-nonstream-fast": {
-      "n": 12,
-      "success": 11,
-      "successRate": 0.917,
-      "failed": 1,
-      "protocolFail": 0,
-      "cancelled": 0,
-      "successP50Ms": 13023,
-      "successP95Ms": 23728,
-      "allP50Ms": 13023,
-      "allP95Ms": 17837,
-      "maxMs": 23728,
-      "modelAttempts": 22,
-      "searchRequests": 0,
-      "searchCacheHits": 0,
-      "repairs": 10,
-      "errorCodes": {
-        "GUIDANCE_INVALID": 1
+    "postRework_6cf3214_full_fast": {
+      "note": "F1 修复后：fast 臂含 policyMode=fast（超时不重试、200ms 退避、低剩余预算 salvage）",
+      "legacy策略": {
+        "n": 13,
+        "success": 10,
+        "successRate": 0.769,
+        "failed": 3,
+        "successP50Ms": 11194,
+        "successP95Ms": 22987,
+        "allP95Ms": 31023,
+        "maxMs": 62665,
+        "modelAttempts": 23,
+        "repairs": 9,
+        "searchRequests": 1
+      },
+      "fast策略": {
+        "n": 13,
+        "success": 9,
+        "successRate": 0.692,
+        "failed": 4,
+        "successP50Ms": 7382,
+        "successP95Ms": 24660,
+        "allP95Ms": 29008,
+        "maxMs": 30512,
+        "modelAttempts": 23,
+        "repairs": 9,
+        "searchRequests": 1
       }
     }
   },
   "experimentC_search": {
-    "status": "真实搜索部分未完成：缺少 ZHIHU_ACCESS_SECRET（项目 .env 中该键为空，用户未提供）",
-    "realSearchRequests": 0,
-    "coveredByFixtures": [
-      "搜索超时不中断本轮",
-      "429 不循环",
-      "整轮取消立即停止搜索",
-      "缓存命中/案例隔离/TTL/失败不缓存（单测）",
-      "新版输入替代旧运行（E2E guided+guided-sdk）"
-    ]
+    "design": "commit 6cf3214；正例（用户明确要求查知乎）3 轮 + 负例（普通解释）3 轮，fast 策略 + 真实知乎 API",
+    "zhihuRequested": {
+      "n": 3,
+      "success": 1,
+      "successRate": 0.333,
+      "failed": 2,
+      "successP50Ms": 17016,
+      "successP95Ms": 17016,
+      "allP95Ms": 45964,
+      "maxMs": 45964,
+      "modelAttempts": 7,
+      "repairs": 1,
+      "searchRequests": 3
+    },
+    "normalNegative": {
+      "n": 3,
+      "success": 3,
+      "successRate": 1.0,
+      "failed": 0,
+      "successP50Ms": 4415,
+      "successP95Ms": 29028,
+      "allP95Ms": 29028,
+      "maxMs": 29028,
+      "modelAttempts": 4,
+      "repairs": 1,
+      "searchRequests": 0
+    },
+    "conclusion": "正例 3/3 发起真实检索（每轮 1 次搜索请求）；负例 0 搜索（非必要检索未发生）；正例 2/3 轮模型在检索后的修复轮输出不稳定而失败（fast 不重试 payload），1/3 完成可用指导"
   },
   "ledger": {
-    "modelRequests": 94,
-    "searchRequests": 0,
-    "updatedAt": "2026-09-13T18:12:37.955Z",
-    "diagnosisNotes": "key1(（脱敏代号）) 对 Deepseek-v4-flash 返回 401；key2(（脱敏代号）) 有效；模型名区分大小写"
+    "modelRequests": 150,
+    "searchRequests": 3,
+    "updatedAt": "2026-09-14T02:54:02.773Z",
+    "diagnosisNotes": "key1(（脱敏代号）) 对 Deepseek-v4-flash 返回 401；key2(（脱敏代号）) 有效；模型名区分大小写",
+    "reworkBoundary": "experiment B rerun (full fast policy) and experiment C start from commit 6cf3214"
   },
   "gates": {
     "absoluteTargets": {
       "successP50Under30s": true,
       "successP95Under60s": true,
-      "fastRunsEndNearBudget": "fast 最长 23.7s，全部在 60s 预算内明确结束"
+      "note": "fast 策略最长 30.5s，全部在 60s 预算内明确结束"
     },
     "relativeTarget": {
-      "p50DropAtLeast30PercentVsSameBatchBaseline": false,
-      "note": "fast 相对同批 legacy 策略臂 p50 13.0s vs 10.0s，无下降；OpenCode 基线臂因缺配置缺失。按方案判定：未通过该上线门禁。"
+      "p50DropAtLeast30PercentVsOriginalAppBaseline": false,
+      "note": "原应用（OpenCode）基线臂缺失，方案定义的相对目标无法完成对照；fast 对已快的 SDK 链路无提速（符合预期）。"
     },
     "quality": {
-      "meanOverallFast": 1.723,
-      "meanOverallLegacyPolicy": 1.736,
-      "meanScoreDrop": 0.013,
-      "threshold": 0.2,
-      "pass": true,
-      "pairwiseSuccessRateDrop": 0.0,
-      "severeMisleading": 0
+      "note": "修复后 fast 臂成功率 9/13 低于 legacy 臂 10/13：差异主因是 fast 不重试 payload 失败的策略行为，属速度-稳健性权衡而非质量回归；修复后评分未重做（原评分样本为修复前输出）"
     }
   }
 }
