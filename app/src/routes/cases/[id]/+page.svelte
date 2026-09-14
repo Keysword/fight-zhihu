@@ -401,9 +401,18 @@
 {#if view.mode === 'guided'}
 	<main class="guided-main">
 		<header class="guided-case-head">
-			<p class="guided-meta">案例目标</p>
+			<p class="guided-meta">案例背景</p>
 			<h1>{view.case.title}</h1>
-			<p class="guided-goal">{view.case.goal}</p>
+			<dl class="case-problem">
+				<div>
+					<dt>想解决的问题</dt>
+					<dd class="guided-goal">{view.case.goal}</dd>
+				</div>
+				<div>
+					<dt>当前困惑</dt>
+					<dd>{view.case.confusion}</dd>
+				</div>
+			</dl>
 		</header>
 
 		{#if guidedLoading || guidedFailure || guidedStatus}
@@ -418,6 +427,34 @@
 				onRetry={() => runGuidance()}
 			/>
 		{/if}
+
+		<section class="case-materials" aria-labelledby="case-materials-heading">
+			<div class="case-materials-head">
+				<h2 id="case-materials-heading">原材料与补充</h2>
+				<span>{view.case.evidence.length} 条原材料</span>
+			</div>
+			<p class="case-materials-intro">先看看各方提供了什么信息，以及我掌握了哪些情况。</p>
+
+			{#if view.case.evidence.length}
+				<ul class="material-list">
+					{#each view.case.evidence as item (item.id)}<li>
+							<strong>{item.sourceLabel}</strong>
+							<p>{item.content}</p>
+						</li>{/each}
+				</ul>
+			{:else}<p class="muted">还没有添加原材料。</p>{/if}
+			{#if view.inputs.length}
+				<section class="input-history" aria-label="你的补充与回答">
+					<h3>你的补充与回答 <span>（{view.inputs.length}）</span></h3>
+					<ul>
+						{#each [...view.inputs].reverse() as input (input.id)}<li>
+								<time datetime={input.createdAt}>{formatTime(input.createdAt)}</time>
+								<p>{input.content}</p>
+							</li>{/each}
+					</ul>
+				</section>
+			{/if}
+		</section>
 
 		{#if shownGuidance}
 			<GuidancePanel
@@ -486,32 +523,12 @@
 					</div>
 				</details>
 			{/if}
-			{#if view.inputs.length}
-				<details class="input-history">
-					<summary>查看你的补充与回答（{view.inputs.length}）</summary>
-					<ul>
-						{#each [...view.inputs].reverse() as input (input.id)}<li>
-								<time datetime={input.createdAt}>{formatTime(input.createdAt)}</time>
-								<p>{input.content}</p>
-							</li>{/each}
-					</ul>
-				</details>
-			{/if}
 		</section>
 
 		<details class="guided-materials">
-			<summary>原材料与补充</summary>
+			<summary>追加一段原材料</summary>
 			<div class="material-body">
-				{#if view.case.evidence.length}
-					<ul class="material-list">
-						{#each view.case.evidence as item (item.id)}<li>
-								<strong>{item.sourceLabel}</strong>
-								<p>{item.content}</p>
-							</li>{/each}
-					</ul>
-				{:else}<p class="muted">还没有添加原材料。</p>{/if}
 				<div class="guided-evidence-form">
-					<h2>追加一段原材料</h2>
 					<div class="composer-row">
 						<label>材料来自哪里<input bind:value={sourceLabel} maxlength="120" /></label>
 						<label

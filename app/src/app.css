@@ -842,6 +842,73 @@ h1,
 	font-size: clamp(18px, 2.2vw, 23px);
 	line-height: 1.75;
 }
+.case-problem {
+	margin: 0;
+	display: grid;
+	gap: 18px;
+}
+.case-problem dt {
+	margin-bottom: 5px;
+	color: var(--muted);
+	font-size: 14px;
+	font-weight: 700;
+}
+.case-problem dd {
+	margin: 0;
+	line-height: 1.75;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+.case-materials {
+	padding: 28px 0;
+	border-bottom: 1px solid var(--rule);
+}
+.case-materials-head {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 12px;
+}
+.case-materials-head h2 {
+	margin: 0;
+	font-size: 21px;
+}
+.case-materials-head span,
+.case-materials-intro {
+	color: var(--muted);
+	font-size: 14px;
+}
+.case-materials-intro {
+	margin: 8px 0 20px;
+	line-height: 1.65;
+}
+.case-materials .material-list {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 14px;
+}
+.case-materials .material-list li {
+	padding: 18px 20px;
+	border: 0;
+	border-left: 3px solid var(--blue);
+	background: var(--paper);
+	overflow-wrap: anywhere;
+}
+.case-materials .material-list strong {
+	color: var(--blue);
+}
+.case-materials .input-history h3 {
+	font-size: 16px;
+	margin: 20px 0 8px;
+}
+.case-materials .input-history p {
+	overflow-wrap: anywhere;
+}
+@media (max-width: 600px) {
+	.case-materials .material-list {
+		grid-template-columns: 1fr;
+	}
+}
 .guidance-panel {
 	display: grid;
 	gap: 30px;

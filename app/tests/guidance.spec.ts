@@ -68,7 +68,7 @@ test('updates guidance after unreachable and already-asked feedback, then persis
 	await page.reload();
 	await expect(page.getByText('需要换一个可执行的突破点').first()).toBeVisible();
 	await expect(page.getByText('这是补充前的理解')).toHaveCount(0);
-	await page.getByText('查看你的补充与回答（2）').click();
+	await expect(page.getByRole('heading', { name: '你的补充与回答' })).toBeVisible();
 	await expect(page.getByText('[单位]原对接人联系不上')).toBeVisible();
 	await expect(page.getByText('[手机号]')).toBeVisible();
 	await expect(page.getByText('13812345678')).toHaveCount(0);
@@ -227,7 +227,7 @@ test('changing feedback or material invalidates its own preview confirmation', a
 	await feedback.fill('原对接人电话改为 13912345678。');
 	await expect(feedbackConfirmation).not.toBeChecked();
 
-	await page.getByText('原材料与补充').click();
+	await page.getByText('追加一段原材料', { exact: true }).click();
 	const material = page.getByRole('textbox', { name: '原材料内容' });
 	await material.fill('通知发到了 first@example.com。');
 	const materialConfirmation = page.getByLabel('我已检查预览，确认可以用于重新整理').last();
