@@ -245,3 +245,41 @@ test('guided entry copy describes provisional understanding and a breakthrough s
 	await page.getByRole('link', { name: '新建一件卡住的事' }).click();
 	await expect(page.getByText('先形成一版暂时理解，再找一个可以试的突破点')).toBeVisible();
 });
+
+test('keeps running and failure status visible while reading a long case on mobile', async ({
+	page
+}) => {
+	// Use a distinct client identity so earlier tests do not consume this user's IP quota.
+	await page.setExtraHTTPHeaders({ 'x-forwarded-for': '192.0.2.249' });
+	await page.setViewportSize({ width: 390, height: 844 });
+	const caseId = await createGuidedCase(page, { title: '运行状态可见性' });
+	let finish = false;
+	await page.route(`**/api/cases/${caseId}/guidance/runs/*`, async (route) => {
+		if (finish) {
+			await route.fulfill({
+				status: 503,
+				json: { ok: false, error: { message: '连接暂时中断，请重试。' } }
+			});
+		} else {
+			await route.fulfill({
+				json: { ok: true, data: { phase: 'thinking', elapsedMs: 25000, done: false } }
+			});
+		}
+	});
+	await submitFeedback(page, '联系不上', '原联系人一直没有回复。');
+	const status = page.getByRole('region', { name: '运行状态' });
+	await expect(status).toContainText('正在理解你的材料');
+	await expect(status).toContainText('已用 25 秒');
+	await page.getByRole('heading', { name: '整理记录' }).scrollIntoViewIfNeeded();
+	await expect(status).toBeInViewport();
+	await page.screenshot({ path: '/tmp/background-board-run-status-mobile.png' });
+	finish = true;
+	await expect(status).toContainText('补充已保存，本轮未完成');
+	await expect(status.getByRole('button', { name: '只重试整理' })).toBeVisible();
+	await expect(status).not.toContainText('本轮整理已完成');
+	const dimensions = await page.evaluate(() => ({
+		width: innerWidth,
+		content: document.documentElement.scrollWidth
+	}));
+	expect(dimensions.content).toBeLessThanOrEqual(dimensions.width);
+});

@@ -13,6 +13,7 @@
 	import GuidancePanel from '$lib/components/GuidancePanel.svelte';
 	import NextActionCard from '$lib/components/NextActionCard.svelte';
 	import ParticipantCard from '$lib/components/ParticipantCard.svelte';
+	import RunStatus from '$lib/components/RunStatus.svelte';
 	import StageBadge from '$lib/components/StageBadge.svelte';
 	import type { PageData } from './$types';
 
@@ -117,6 +118,7 @@
 	async function runGuidance(savedInput: '补充' | null = null, caseId = view.case.id) {
 		guidedLoading = true;
 		guidedFailure = '';
+		guidedStatus = '';
 		guidedPhase = '';
 		guidedElapsedMs = 0;
 		try {
@@ -175,6 +177,8 @@
 		guidedLoading = true;
 		guidedFailure = '';
 		guidedStatus = '';
+		guidedPhase = '';
+		guidedElapsedMs = 0;
 		try {
 			const response = await fetch(`${base}/api/cases/${caseId}/inputs`, {
 				method: 'POST',
@@ -223,6 +227,8 @@
 		guidedLoading = true;
 		guidedFailure = '';
 		guidedStatus = '';
+		guidedPhase = '';
+		guidedElapsedMs = 0;
 		try {
 			const response = await fetch(`${base}/api/cases/${caseId}/evidence`, {
 				method: 'POST',
@@ -400,6 +406,19 @@
 			<p class="guided-goal">{view.case.goal}</p>
 		</header>
 
+		{#if guidedLoading || guidedFailure || guidedStatus}
+			<RunStatus
+				busy={guidedLoading}
+				failed={Boolean(guidedFailure)}
+				title={guidedLoading
+					? (PHASE_LABELS[guidedPhase] ?? '正在处理你的材料')
+					: guidedFailure || '本轮整理已完成'}
+				detail={guidedLoading ? '可以继续查看已有内容，请等待本轮结果。' : guidedStatus}
+				elapsedMs={guidedElapsedMs}
+				onRetry={() => runGuidance()}
+			/>
+		{/if}
+
 		{#if shownGuidance}
 			<GuidancePanel
 				snapshot={shownGuidance}
@@ -418,16 +437,6 @@
 			</section>
 		{/if}
 
-		{#if guidedLoading}
-			<section class="guided-progress" role="status" aria-live="polite">
-				<p class="progress-phase">{PHASE_LABELS[guidedPhase] ?? '正在整理…'}</p>
-				<p class="fine-print">
-					已用 {Math.round(guidedElapsedMs / 1000)} 秒{#if guidedElapsedMs >= 20_000}
-						· 比平常久一些，仍在进行{/if}
-				</p>
-			</section>
-		{/if}
-
 		{#key view.case.id}
 			<CaseFeedback
 				guidanceId={shownGuidance?.id ?? null}
@@ -436,24 +445,6 @@
 				onSave={saveFeedback}
 			/>
 		{/key}
-
-		{#if guidedFailure || guidedStatus}
-			<div
-				class:error-box={Boolean(guidedFailure)}
-				class:update-note={!guidedFailure}
-				class="guided-run-note"
-				role="status"
-			>
-				{#if guidedFailure}<strong>{guidedFailure}</strong>{/if}
-				{#if guidedStatus}<p>{guidedStatus}</p>{/if}
-				{#if guidedFailure}<button
-						class="text-button"
-						type="button"
-						disabled={guidedLoading}
-						onclick={() => runGuidance()}>只重试整理</button
-					>{/if}
-			</div>
-		{/if}
 
 		<section class="guidance-record">
 			<div class="record-head">
@@ -591,6 +582,11 @@
 	</main>
 {:else}
 	<main>
+		{#if loading}<RunStatus
+				busy
+				title="正在处理案例"
+				detail="正在保存材料或更新背景板，请稍候。"
+			/>{/if}
 		<header class="case-head">
 			<div class="case-meta">
 				<StageBadge stage={board?.stage ?? view.case.stage} /><span

@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import type { EvidenceKind } from '$lib/domain/types';
 	import { parseRedactionReplacements, redactText } from '$lib/privacy/redact';
+	import RunStatus from '$lib/components/RunStatus.svelte';
 	import type { PageData } from './$types';
 	let { data }: { data: PageData } = $props();
 	let guided = $derived(data.mode === 'guided');
@@ -81,6 +82,13 @@
 				: '不必先整理得很漂亮。说明你想做到什么、哪里想不通，再贴上一两段原始信息。'}
 		</p>
 	</header>
+	{#if loading}
+		<RunStatus
+			busy
+			title={guided ? '正在建立案例并整理材料' : '正在建立背景板'}
+			detail="完成后会自动打开案例，请稍候，无需重复提交。"
+		/>
+	{/if}
 	<form
 		class="form-sheet"
 		onsubmit={(event) => {
