@@ -44,7 +44,7 @@
 
 ## 4. 真实验证
 
-- **凭证**：用户提供 `https://chatapi.weixin.qq.com/openai/v1/chat/completions` 与两个 key。实测（诊断请求均计入 ledger，共 7 次）：key1（（脱敏代号），用户称"应该有效"）对该模型返回 401 invalid or expired；key2（（脱敏代号），用户称"可能过期"）有效。模型名**区分大小写**，有效 id 为 `Deepseek-v4-flash`（小写 `deepseek-v4-flash` 返回 400 invalid model）。密钥只存于 0600 gitignored `app/.env.eval`，未进入任何报告或提交。
+- **凭证**：用户提供 `https://chatapi.weixin.qq.com/openai/v1/chat/completions` 与两个 key。实测（诊断请求均计入 ledger，共 7 次）：key1（脱敏代号，内容不记录）对该模型返回 401 invalid or expired；key2（脱敏代号，内容不记录）有效（两个 key 以脱敏代号区分，内容不记录）。模型名**区分大小写**，有效 id 为 `Deepseek-v4-flash`（小写 `deepseek-v4-flash` 返回 400 invalid model）。密钥只存于 0600 gitignored `app/.env.eval`，未进入任何报告或提交。
 - **请求上限执行**：全局 ledger `docs/superpowers/reports/data/sdk-personal-agent/ledger.json`。最终 `modelRequests: 94`（150 上限）：12 次诊断+smoke、38 次实验 A（2 预热 + 36 主样本）、44 次实验 B（24 轮端到端运行共 44 次出站请求）。`searchRequests: 0`。每次执行前检查剩余预算，失败也计数，重启复读 ledger。
 - **实验 A（传输对照）**：2 次预热 + 6 场景 × 3 次 × 2 臂 = 38 次请求。A1（OpenCode 臂）因 `OPENCODE_SERVER_URL`/密码未配置而无法执行，标记为**基线缺失**；实际对照为 legacy-http vs sdk（同一供应商/端点/模型/密钥，无传输外混杂）。
 - **实验 B（策略对照）**：6 场景 × 2 次 × 2 臂 = 24 次端到端运行（多步请求计入同一上限）。
