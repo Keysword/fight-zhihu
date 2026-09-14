@@ -1,129 +1,148 @@
 # 背景板
 
-背景板是一款面向职场新人的移动端优先 PWA。用户把一件卡住的事、零散材料和现实限制放进来，应用先形成一版可以纠正的工作理解，再帮助用户发现可能改变行动的沟通断点，并给出一个值得尝试的下一步。
+帮助刚进入职场或其他复杂组织的新手，在一头雾水时找到方向，试一个可执行的下一步，并在探索中逐渐理解组织如何运转。
 
-这轮改造的重点是“帮助、启发、引导”。模型不负责给人或说法做最终裁决，程序也不再用自然语言规则认证模型概括是否绝对正确。用户可以补充新情况、指出理解有误、说明联系不上或反馈已经问过；提示要求下一版据此调整，实际适应效果纳入真实模型评测。
+新人常常已经看过通知、问过几个人，却仍不知道事情卡在哪里。背景板把目标、困惑、各方材料和现实反馈放在同一个案例中，形成一版可以纠正的工作理解，帮助用户发现信息缺口，再通过一次询问、核对或补充继续推进。
 
-仓库仍保留旧背景板及其数据结构。新引导模式通过服务端开关整体启用，目前需要完成真实模型产品评测后再决定是否作为默认产品路径。2026-09-13 已将它部署为受控个人试用：[projects.wangjian7410.cc/background-board/](https://projects.wangjian7410.cc/background-board/)；仓库和环境示例中的开关默认值仍为关闭。
+**[在线体验](https://projects.wangjian7410.cc/background-board/) · [产品说明计划书](docs/submission/背景板产品说明计划书.md) · [Word 版计划书](docs/submission/背景板产品说明计划书.docx)**
 
-## 一次完整使用
+本项目是知乎黑客松 2026 校园新锐季参赛 Demo，采用免登录的在线案例体验。当前重点是单个事项的探索闭环；跨案例沉淀与组织背景地图属于后续计划。
 
-1. 输入目标、困惑和已有的聊天、邮件或通知，并检查脱敏预览。
-2. 查看“当前理解”。它是一版工作假设，可以纠正，不是程序认证的事实。
-3. 模型认为本案例材料提示沟通断点时，查看至多两个“值得核对的沟通疑点”。每项都要引用相关材料，仍可由用户纠正；模型没有提出疑点时这一栏不显示。
-4. 尝试一个下一步。建议可以是联系、查看材料、等待或先回答一个关键问题。
-5. 用“理解有误”“联系不上”“我问过了”“有新回复”补充现实反馈。输入先持久保存，再触发下一轮整理。
-6. 刷新后继续查看反馈、当前指导和历史版本；失败不会吞掉已经保存的输入。
+## 直接体验宿舍案例
 
-没有模型配置时，匿名宿舍演示使用明确标注的固定样例。普通案例会保留材料与反馈，并如实提示本轮未完成。
+1. 打开在线体验首页，点击 **“体验宿舍案例”**。
+2. 先看想解决的问题、当前困惑和展开的原材料：部门对接人安排接引，接引同事看不到住宿分配结果，人力要求以邮件为准，新人却没有房间号和钥匙信息。
+3. 阅读“当前理解”和相关材料，观察哪些说法回答了不同的问题，以及还缺少什么信息。
+4. 查看“可以先试这一步”，判断建议能否帮助用户继续核对或沟通。
+5. 点击“联系不上”，补充“原对接人联系不上，我目前只能查看入职通知”，检查预览后提交，观察建议如何适应新的限制。
+6. 查看整理记录或刷新页面，回看材料、补充和理解历史。模型输出会随上下文变化，以页面实际结果为准。
 
-## 产品原则
+案例的核心问题是：**有人接引进入园区，并不代表房间与钥匙已经落实。** 背景板帮助新人把笼统的“能不能入住”拆成值得向现实求证的问题。
 
-- 先理解用户的目标、限制和已经尝试过的动作，再寻找能改变下一步的缺口。
-- 沟通提醒必须落到具体环节：观察到了什么、可能怎样误读、影响哪个决定、如何低成本核对。
-- 不给人物做可信度评分，不从局部信息推断对方动机，也不把抱怨扩写成指控。
-- 只推荐一个最值得尝试的下一步，不重复用户已经说明不可行的办法。
-- 外部经验只用来发现新角度或待验证入口，不能证明本单位的情况。
-- 原材料、用户反馈和模型指导分别保存。模型只能产生新的指导快照，不能改写用户内容。
-- 产品只生成沟通建议，不冒充用户发送消息；复制建议也不会被记录为已经执行。
+也可以点击“新建一件卡住的事”，使用匿名或脱敏材料体验自己的事项。当前没有账号隔离，持有案例链接即可访问和操作对应内容。
 
-## 架构
+## 当前可以做什么
+
+- **整理零散信息**：输入目标、困惑、聊天、邮件、通知或个人记录；页面先展示原材料与补充，再展示当前理解。
+- **形成可纠正的理解**：在材料有依据时，提出至多两个值得核对的沟通疑点，并关联相关来源。
+- **给出下一步**：优先推荐一个值得尝试的行动，包括联系、查看材料、等待或回答关键问题，必要时提供沟通措辞。
+- **根据现实反馈调整**：通过“理解有误”“联系不上”“我问过了”“有新回复”继续补充，保存输入后触发整理。
+- **保留探索历史**：持久保存案例材料、补充和指导版本；整理失败后可以重试，已保存输入不会丢失。
+- **显示运行状态**：通过醒目的状态条提示进行中、完成或失败；轮询整理时展示阶段和耗时。
+- **按需检索外部经验**：具备知乎搜索与外部资料搜索工具，检索是否发生取决于模型决策、配置和运行预算。
+
+产品只生成建议，不冒充用户发送消息。AI 的理解和外部经验可以帮助发现方向，但不能替代本单位负责方对实际情况的确认，也不能用于判断他人的动机。
+
+## 与知乎社区的连接
+
+知乎职场经验能够提供不同组织中的办事经历、常见误区和沟通思路。背景板先把用户处境变成具体问题，再按需寻找相似经验，让社区内容进入一次真实的探索过程。
+
+当前已经具备知乎检索工具接入能力。外部结果作为启发和待验证线索，不作为本案例事实的直接证明。面向职场情境的精细匹配和长期经验复用仍是后续建设方向。
+
+## 后续计划
+
+1. **探索记录沉淀**：记录每次问了谁、获得什么信息、哪些尝试无效，以及最终怎样推进；由用户确认值得保留的认识，并关联原始依据。
+2. **组织背景地图**：将多次探索中的职责分工、流程前置条件、信息渠道和协调路径联系起来，标明适用范围、时间与待验证状态，允许修正和失效。
+3. **匹配知乎职场经验**：结合事项类型、用户阶段、已尝试的行动和现实限制，解释外部经验的相似之处与适用条件，帮助用户决定下一次如何核对。
+
+目前保存的是单个案例的材料和理解历史，尚未实现跨案例个人知识空间。上述计划不表示产品已经能够自动识别组织的深层规则。效果验证将关注用户能否说清信息缺口、找到可执行的下一步，以及后续是否真正复用沉淀记录；暂不宣称量化成效。
+
+## 技术架构
 
 ```text
 响应式 SvelteKit PWA
         │
         ▼
-SvelteKit API（校验、脱敏、限流、模式切换）
+SvelteKit API（校验、脱敏、限流）
         │
-        ├── SQLite
-        │     ├── 案例与原材料
-        │     ├── 用户反馈与上下文版本
-        │     ├── 引导快照及历史
-        │     └── 旧背景板、待审提案与事件
+        ├── SQLite：案例、原材料、反馈、上下文版本与指导历史
         │
-        ├── Guidance 运行时（新模式）
-        │     ├── provide_guidance
-        │     ├── search_zhihu / search_global（可选）
-        │     └── 单案例串行 + 版本比较 + 有界调用
+        ├── Guidance 运行时
+        │     ├── provide_guidance：生成结构化指导
+        │     ├── search_zhihu / search_global：按需搜索
+        │     ├── 单案例串行、版本比较、超时与有界重试
+        │     └── 模型传输：legacy / SDK 直连
         │
-        └── 旧 Background Board Agent（兼容模式）
+        └── 旧 Background Board Agent 与历史数据（兼容保留）
 ```
 
-## 韧性改进（2026-09-13）
-
-生产环境观察到偶现的模型调用超时、网络抖动以及返回内容偶尔引用无效 ID 或缺少可选字段的情况。[韧性改进计划](docs/superpowers/plans/2026-09-13-guidance-resilience-remediation-plan.md) 实施了四个阶段的修复：
-
-- **阶段 A（超时、取消与重试）**：单次模型调用超时（`GUIDANCE_MODEL_TIMEOUT_MS`，默认 90 秒）、整轮运行墙钟预算（`GUIDANCE_RUN_BUDGET_MS`，默认 2 分钟）以及可配置的传输层重试（`GUIDANCE_MODEL_MAX_RETRIES`，默认 2 次）。重试只消耗传输预算，不占用推理步数限额。
-- **阶段 B（分层降级校验与引用净化）**：[salvage 模块](app/src/lib/server/agent/guidance-salvage.ts) 实现了按块解析与引用清洗，保留"当前理解"作为最低必需层；无效引用被剥离而非用于否决整个回复。schema 与 reference 错误各有独立的修正预算，避免常见组合导致过早失败。
-- **阶段 C（运行进度可见）**：`guidance.run.finished` 事件携带 `repairs`、`completeness`、`droppedCount` 等字段，前端可据此展示降级信息或重试建议。
-- **阶段 D（终态语义与收尾）**：`ready` 结果包含 `completeness` 字段（`full` / `partial` / `minimal`），确保部分可用的指导也会被保存并显示，而不是当作失败丢弃。
-
-这些改进使真实环境下的模型调用成功率从约 85% 提升到预期 95% 以上，同时保持了数据合同的核心约束。
-
-新运行时最多调用模型 5 次、搜索 2 次、修复结构或引用 1 次。有效的 `provide_guidance` 会直接结束本轮，不需要额外的完成调用。程序只硬校验结构、来源存在与归属、链接、预算、并发和版本冲突；建议是否有帮助由用户反馈和产品评测检验。
-
-生产模型可以使用 OpenAI Chat Completions 兼容接口、OpenCode Server 或知乎直答。模型没有文件、Shell 或任意写入权限，只能提交受约束的 JSON 动作。
+原材料、用户反馈和模型指导分别保存；模型不能改写用户输入。运行时检查结构与引用归属，并阻止旧上下文产生的结果覆盖更新后的内容。可用的部分指导可以保存，失败结果则保留明确的重试入口。
 
 ## 本地运行
 
-需要 Node.js 24、Corepack 和 pnpm。
+需要 Node.js 24 和 pnpm（可通过 Corepack 使用）。
 
 ```bash
-cd app
+git clone https://github.com/Keysword/fight-zhihu.git
+cd fight-zhihu/app
 corepack pnpm install --frozen-lockfile
 cp .env.example .env
-BACKGROUND_BOARD_GUIDANCE_V2=1 pnpm dev
+BACKGROUND_BOARD_DATA_DIR=./data BACKGROUND_BOARD_GUIDANCE_V2=1 corepack pnpm dev
 ```
 
-应用固定使用 `/background-board` 路径。常用环境变量：
+打开 Vite 输出的本地地址，并访问 `/background-board/` 路径。启动命令显式使用本地数据目录，因为 `.env.example` 的数据目录示例为服务器路径 `/srv/background-board/data`。
 
-- `BACKGROUND_BOARD_GUIDANCE_V2=1`：启用整套引导模式；关闭或移除后使用旧页面和旧运行路径。
-- `BACKGROUND_BOARD_DATA_DIR`：SQLite 数据目录；本地留空时使用 `app/data`。
-- `AGENT_API_URL`、`AGENT_API_KEY`、`AGENT_MODEL`：OpenAI 兼容模型。
-- `OPENCODE_SERVER_URL`、`OPENCODE_SERVER_USERNAME`、`OPENCODE_SERVER_PASSWORD`：OpenCode Server。
-- `ZHIHU_ACCESS_SECRET`：知乎开放平台搜索；没有其他模型配置时也用于知乎直答。
-- `APP_VERSION`：健康检查展示的版本。
+`.env.example` 默认关闭引导模式，上面的启动命令会将其打开。没有模型配置时，宿舍案例使用明确标注的固定样例；普通案例仍可保存材料，但无法完成模型整理。要体验根据反馈生成新建议，需配置模型。
 
-模型选择顺序是 `AGENT_*`、OpenCode Server、知乎直答。具体凭据只放在本地或部署环境，不提交到仓库。
+### 模型配置
+
+在 `app/.env` 中选择一种传输方式：
+
+| 方式                             | 配置                                                           | 行为                                                                                                                                  |
+| -------------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `AGENT_TRANSPORT=legacy`（默认） | `AGENT_API_URL`、`AGENT_MODEL`，按服务要求设置 `AGENT_API_KEY` | `AGENT_API_URL` 使用完整接口地址；未配置时按 OpenCode Server、知乎直答的顺序尝试解析配置                                              |
+| `AGENT_TRANSPORT=sdk`            | 必填 `AGENT_SDK_BASE_URL`、`AGENT_API_KEY`、`AGENT_MODEL`      | 通过 OpenAI Node SDK 直连；基础地址如 `https://provider.example/v1`，不带 `/chat/completions`；缺少必填配置时报错，不自动回落其他服务 |
+
+- `AGENT_SDK_STREAM=1`：启用 SDK 服务端流式拼装，默认 `0`；不是前端逐字输出开关。
+- `OPENCODE_SERVER_URL`、`OPENCODE_SERVER_USERNAME`、`OPENCODE_SERVER_PASSWORD`：legacy 路径的 OpenCode Server 配置。
+- `ZHIHU_ACCESS_SECRET`：启用知乎搜索；legacy 路径没有其他可用模型配置时，也可用于知乎直答。
+- `APP_VERSION`：健康接口展示的版本标识。
+
+具体凭据仅放在本地或服务器环境文件中，不提交到仓库。
+
+### 整理预算
+
+`GUIDANCE_POLICY` 与模型传输方式独立，可以选择 `legacy`（默认）或 `fast`。下表是未显式覆盖时的默认值，实际耗时不等于预算上限。
+
+| 策略     | 整轮预算 | 单次模型超时 | 每步最多传输重试 | 单次搜索超时 | 最多搜索 | 最多模型步骤 |
+| -------- | -------- | ------------ | ---------------- | ------------ | -------- | ------------ |
+| `legacy` | 240 秒   | 90 秒        | 2 次             | 8 秒         | 2 次     | 5 步         |
+| `fast`   | 60 秒    | 40 秒        | 1 次             | 8 秒         | 1 次     | 3 步         |
+
+对应覆盖项为 `GUIDANCE_RUN_BUDGET_MS`、`GUIDANCE_MODEL_TIMEOUT_MS`、`GUIDANCE_MODEL_MAX_RETRIES`、`GUIDANCE_SEARCH_TIMEOUT_MS`、`GUIDANCE_MAX_SEARCHES`、`GUIDANCE_MAX_MODEL_STEPS`。**从 `.env.example` 切换为 fast 时，应移除或调整其中显式填写的 legacy 数值，否则这些覆盖仍然生效。**
+
+`GUIDANCE_RUN_RATE_LIMIT` 设置每个客户端 IP 在 10 分钟内启动整理的限额，默认 10。复用当前运行及查询进度不重复消耗启动额度。同一出口 IP 的体验者可能共用限额。
 
 ## 验证
 
+在 `app` 目录执行：
+
 ```bash
-cd app
-pnpm format:check
-pnpm lint
-pnpm check
-pnpm exec vitest run
-pnpm exec playwright test
-pnpm build
+corepack pnpm lint
+corepack pnpm check
+corepack pnpm exec vitest run
+corepack pnpm exec playwright install chromium
+corepack pnpm exec playwright test
+corepack pnpm build
 test -f build/index.js
 ```
 
-浏览器测试分别启动关闭开关的旧模式和开启开关的引导模式。引导模式只连接本地脚本模型，使用独立的临时 SQLite 目录，并显式清空真实模型与知乎凭据。固定的 10 个产品场景位于 `app/evals/guidance/cases.json`；脚本模型只验证工程合同，不能替代真实模型效果评价。
+浏览器测试启动独立数据目录的旧模式、引导模式和 SDK 引导模式服务，使用本地脚本模型并清空真实服务凭据。测试涵盖材料保存、反馈、引用校验、版本冲突、失败重试与页面流程。脚本模型验证的是工程行为，不替代真实模型效果和真实用户体验评估。
 
-## 数据、隐私与回退
+## 部署与数据
 
-- 浏览器先展示手机号、证件号码、邮箱及用户指定词的脱敏预览；服务端再次脱敏后才持久化。
-- 修改任何待发送内容或替换规则后，原来的预览确认立即失效。
-- 沟通疑点必须引用本案例材料或用户反馈；外部结果不能单独支撑对本次沟通的判断。
-- 较晚返回的旧分析可以留在历史中，但不能覆盖更新后的上下文。
-- 模型日志不含原始回复或完整提示，也不会进入下一轮产品上下文。
-- 当前没有账号系统。案例 UUID 仍是能力链接，公开体验只能使用匿名或合成材料。
+使用单个 Node 进程和本地 SQLite 运行参赛 Demo。生产服务监听 `127.0.0.1:3210`，由 Nginx 从 `/background-board/` 反向代理；数据目录为 `/srv/background-board/data`，版本目录为 `/srv/background-board/releases`。安装、模型模式切换、备份和回滚见[部署说明](deploy/README.md)。
 
-回退只需移除或关闭 `BACKGROUND_BOARD_GUIDANCE_V2` 并重启应用。旧背景板仍可读取；新增反馈和指导快照不会被删除，之后重新启用开关仍可恢复。
-
-## 部署
-
-生产进程以独立的 `background-board` 用户运行，只监听 `127.0.0.1:3210`；Nginx 从 `/background-board/` 反向代理。SQLite 数据位于 `/srv/background-board/data`，发布版本位于 `/srv/background-board/releases`。首次安装和回滚命令见 [部署说明](deploy/README.md)。
-
-引导模式已于 2026-09-13 以发布版本 `20260913T120254Z` 开启受控个人试用。正式默认切换仍应以完整的 10 场景真实模型产品评测为依据，不能只凭一次烟雾测试或输出看起来更温和。
+- 分享首页供体验者创建独立案例；分享同一案例链接表示共同操作同一份状态。
+- 手机号、证件号码和邮箱支持自动脱敏；姓名、单位等需用户检查并自定义替换，服务端再次脱敏后持久化。
+- 同案例串行协调和运行进度保存在进程内存中。服务重启会中断运行中任务，已写入 SQLite 的材料与结果仍保留；当前不直接扩展为多个 worker 或副本。
+- 关闭 `BACKGROUND_BOARD_GUIDANCE_V2` 后重启可切回旧页面和旧运行路径，新增反馈与指导历史仍保留。模型传输与预算的回退另见部署说明。
 
 ## 文档
 
-- [当前产品设计](docs/superpowers/specs/2026-09-11-guided-help-product-design.md)
-- [当前实施计划](docs/superpowers/plans/2026-09-11-guided-help-implementation-plan.md)
-- [本轮实施结果](docs/superpowers/reports/2026-09-11-guided-help-results.md)
-- [试用整改方案：等待可见、失败可用、结论可收尾](docs/superpowers/plans/2026-09-13-guidance-resilience-remediation-plan.md)
+- [参赛产品说明计划书](docs/submission/背景板产品说明计划书.md)
+- [引导式产品设计](docs/superpowers/specs/2026-09-11-guided-help-product-design.md)
+- [引导式产品实施计划](docs/superpowers/plans/2026-09-11-guided-help-implementation-plan.md)
+- [运行韧性改进计划](docs/superpowers/plans/2026-09-13-guidance-resilience-remediation-plan.md)
+- [SDK 专用 Agent 评审记录](docs/superpowers/reports/2026-09-14-sdk-personal-agent-review.md)
 - [最初项目说明（历史）](背景板-项目说明.md)
-- [第一版产品形态（历史）](docs/superpowers/specs/2026-09-05-background-board-product-form-design.md)
-- [线上可靠性治理报告](docs/superpowers/reports/2026-09-10-线上可靠性治理报告.md)
